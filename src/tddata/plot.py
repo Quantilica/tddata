@@ -22,12 +22,10 @@ import matplotlib.ticker as ticker
 import pandas as pd
 import seaborn as sns
 
+from . import analytics
 from .constants import (
-    AccountStatus,
     Column,
     Gender,
-    OperationType,
-    TradedLast12Months,
 )
 
 
@@ -128,16 +126,9 @@ def plot_stock(data: pd.DataFrame, by_bond_type: bool = True):
     """Plot the evolution of the Stock Value."""
     f, ax = plt.subplots(figsize=(10, 6))
 
-    if by_bond_type:
-        # Group by month and bond type
-        df_grouped = (
-            data.groupby([Column.STOCK_MONTH.value, Column.BOND_TYPE.value])[
-                Column.STOCK_VALUE.value
-            ]
-            .sum()
-            .reset_index()
-        )
+    df_grouped = analytics.aggregate_stock(data, by_bond_type=by_bond_type)
 
+    if by_bond_type:
         sns.lineplot(
             data=df_grouped,
             x=Column.STOCK_MONTH.value,
@@ -147,11 +138,6 @@ def plot_stock(data: pd.DataFrame, by_bond_type: bool = True):
         )
         ax.legend(title="Bond Type")
     else:
-        df_grouped = (
-            data.groupby([Column.STOCK_MONTH.value])[Column.STOCK_VALUE.value]
-            .sum()
-            .reset_index()
-        )
         sns.lineplot(
             data=df_grouped,
             x=Column.STOCK_MONTH.value,
@@ -178,12 +164,7 @@ def plot_investors_demographics(
     """Plot distribution of investors by a categorical column (State, Gender, etc)."""
     f, ax = plt.subplots(figsize=(10, 6))
 
-    # Prepare data with enum mappings
-    plot_data = _prepare_demographics_data(data, column)
-
-    # Get value counts
-    counts = _get_demographics_counts(plot_data, column, top_n)
-
+    counts = analytics.prepare_demographics_counts(data, column, top_n)
     human_col = _humanize_label(column)
 
     # Plot based on chart type
@@ -198,30 +179,6 @@ def plot_investors_demographics(
     _add_footer(f)
     f.tight_layout()
     return f
-
-
-def _prepare_demographics_data(data: pd.DataFrame, column: str) -> pd.DataFrame:
-    """Prepare demographics data by mapping enum codes to human-readable labels."""
-    plot_data = data.copy()
-
-    # Map enum codes to human-readable labels for plotting
-    if column == Column.GENDER.value:
-        plot_data[column] = plot_data[column].map(Gender.get_labels())
-    elif column == Column.ACCOUNT_STATUS.value:
-        plot_data[column] = plot_data[column].map(AccountStatus.get_labels())
-    elif column == Column.TRADED_LAST_12_MONTHS.value:
-        plot_data[column] = plot_data[column].map(TradedLast12Months.get_labels())
-
-    return plot_data
-
-
-def _get_demographics_counts(data: pd.DataFrame, column: str, top_n: int) -> pd.Series:
-    """Get value counts for demographics data with special handling for age."""
-    # For age, show full distribution; for other columns, apply top_n limit
-    if column == Column.AGE.value:
-        return data[column].value_counts().sort_index()
-    else:
-        return data[column].value_counts().head(top_n)
 
 
 def _plot_demographics_pie(ax, counts: pd.Series):
@@ -284,35 +241,8 @@ def _plot_demographics_bar(ax, counts: pd.Series, human_col: str, column: str):
 
 def plot_investors_population_pyramid(data: pd.DataFrame):
     """Plot a population pyramid showing age distribution by gender."""
-    # Filter and prepare data
-    pyramid_data = data[[Column.AGE.value, Column.GENDER.value]].copy()
 
-    # Map gender codes to labels
-    pyramid_data[Column.GENDER.value] = pyramid_data[Column.GENDER.value].map(
-        Gender.get_labels()
-    )
-
-    # Create age bins (5-year intervals)
-    max_age = int(pyramid_data[Column.AGE.value].max())
-    min_age = int(pyramid_data[Column.AGE.value].min())
-    bins = list(range(min_age - (min_age % 5), max_age + 5, 5))
-    labels = [f"{i}-{i + 4}" for i in bins[:-1]]
-
-    pyramid_data["age_group"] = pd.cut(
-        pyramid_data[Column.AGE.value], bins=bins, labels=labels, right=False
-    )
-
-    # Count by age group and gender
-    grouped = (
-        pyramid_data.groupby(["age_group", Column.GENDER.value], observed=False)
-        .size()
-        .reset_index(name="count")
-    )
-
-    # Pivot to get male and female columns
-    pivoted = grouped.pivot(
-        index="age_group", columns=Column.GENDER.value, values="count"
-    ).fillna(0)
+    pivoted = analytics.prepare_population_pyramid(data)
 
     # Get labels for male and female (handle missing genders gracefully)
     male_label = Gender.get_labels()[Gender.MALE.value]
@@ -373,14 +303,7 @@ def plot_investors_evolution(data: pd.DataFrame, freq: str = "ME"):
     """Plot the number of new investors over time."""
     f, ax = plt.subplots(figsize=(10, 6))
 
-    # Resample by frequency
-    # Assuming JOIN_DATE is datetime
-    resampled = (
-        data.set_index(Column.JOIN_DATE.value)
-        .resample(freq)
-        .size()
-        .reset_index(name="new_investors")
-    )
+    resampled = analytics.aggregate_new_investors(data, freq)
 
     sns.lineplot(data=resampled, x=Column.JOIN_DATE.value, y="new_investors", ax=ax)
 
@@ -398,25 +321,9 @@ def plot_operations(data: pd.DataFrame, by_type: bool = True):
     """Plot operations value over time."""
     f, ax = plt.subplots(figsize=(10, 6))
 
-    # Operations can be big, better aggregate by month
-    data["month"] = (
-        data[Column.OPERATION_DATE.value].dt.to_period("M").dt.to_timestamp()
-    )
-
-    # Map operation types to full names
-    if by_type:
-        data[Column.OPERATION_TYPE.value] = data[Column.OPERATION_TYPE.value].replace(
-            OperationType.get_labels()
-        )
+    grouped = analytics.aggregate_operations(data, by_type)
 
     if by_type:
-        grouped = (
-            data.groupby(["month", Column.OPERATION_TYPE.value])[
-                Column.OPERATION_VALUE.value
-            ]
-            .sum()
-            .reset_index()
-        )
         sns.lineplot(
             data=grouped,
             x="month",
@@ -425,11 +332,7 @@ def plot_operations(data: pd.DataFrame, by_type: bool = True):
             ax=ax,
         )
         ax.legend(title="Operation Type")
-
     else:
-        grouped = (
-            data.groupby("month")[Column.OPERATION_VALUE.value].sum().reset_index()
-        )
         sns.lineplot(data=grouped, x="month", y=Column.OPERATION_VALUE.value, ax=ax)
 
     ax.set_title("Operations Volume Over Time")
@@ -500,18 +403,15 @@ def _plot_value_over_time(
 ):
     f, ax = plt.subplots(figsize=(10, 6))
 
-    # Aggregate by month to make plot readable
-    # Create a copy to avoid SettingWithCopyWarning on the original dataframe
-    df = data.copy()
-    df["month"] = df[date_col].dt.to_period("M").dt.to_timestamp()
+    grouped = analytics.aggregate_value_over_time(
+        data, date_col, value_col, group_col=hue_col
+    )
 
     if hue_col:
-        grouped = df.groupby(["month", hue_col])[value_col].sum().reset_index()
         sns.lineplot(data=grouped, x="month", y=value_col, hue=hue_col, ax=ax)
         if legend_title:
             ax.legend(title=legend_title)
     else:
-        grouped = df.groupby("month")[value_col].sum().reset_index()
         sns.lineplot(data=grouped, x="month", y=value_col, ax=ax)
 
     ax.set_title(title)
@@ -522,6 +422,21 @@ def _plot_value_over_time(
     sns.despine(ax=ax)
     f.tight_layout()
     return f
+
+
+def _add_footer(fig):
+    fig.text(
+        0.01,
+        0.01,
+        "Data source: Tesouro Direto",
+        horizontalalignment="left",
+        fontsize=8,
+        color="gray",
+    )
+
+
+def _humanize_label(label: str) -> str:
+    return label.replace("_", " ").title()
 
 
 def _add_footer(fig):

@@ -22,6 +22,7 @@ classifiers = [
 dependencies = [
     "httpx",
     "pandas",
+    "pyarrow>=22.0.0",
     "seaborn",
     "tqdm",
 ]

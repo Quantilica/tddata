@@ -17,54 +17,72 @@
 import shutil
 import tempfile
 import unittest
+import asyncio
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from tddata import downloader
 
 
-class TestDownloader(unittest.TestCase):
+class TestDownloader(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.test_dir = Path(tempfile.mkdtemp())
 
     def tearDown(self):
         shutil.rmtree(self.test_dir)
 
-    @patch("tddata.downloader.httpx.get")
-    def test_get_dataset_resources(self, mock_get):
+    @patch("tddata.downloader.httpx.AsyncClient")
+    async def test_get_dataset_resources(self, mock_client_cls):
+        mock_client = MagicMock()
         mock_response = MagicMock()
         mock_response.json.return_value = {
             "success": True,
             "result": {
                 "resources": [
                     {"name": "Resource 1", "format": "CSV"},
-                    {"name": "Resource 2", "format": "PDF"}
+                    {"name": "Resource 2", "format": "PDF"},
                 ]
-            }
+            },
         }
         mock_response.status_code = 200
-        mock_get.return_value = mock_response
 
-        resources = downloader.get_dataset_resources("fake-id")
+        # Async mock setup
+        future = asyncio.Future()
+        future.set_result(mock_response)
+        mock_client.get.return_value = future
+
+        # When AsyncClient is instantiated, return our mock
+        mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+        # We need to manually invoke the function with the client to test it in isolation
+        # Or test 'download' which calls it.
+        # But get_dataset_resources uses a client instance.
+        # Let's test the logic by calling it directly.
+
+        resources = await downloader.get_dataset_resources(mock_client, "fake-id")
         self.assertEqual(len(resources), 2)
         self.assertEqual(resources[0]["name"], "Resource 1")
 
-    @patch("tddata.downloader.httpx.get")
-    def test_get_dataset_resources_failure(self, mock_get):
+    @patch("tddata.downloader.httpx.AsyncClient")
+    async def test_get_dataset_resources_failure(self, mock_client_cls):
+        mock_client = MagicMock()
         mock_response = MagicMock()
         mock_response.json.return_value = {
             "success": False,
-            "error": "Dataset not found"
+            "error": "Dataset not found",
         }
         mock_response.status_code = 200
-        mock_get.return_value = mock_response
+
+        future = asyncio.Future()
+        future.set_result(mock_response)
+        mock_client.get.return_value = future
 
         with self.assertRaises(ValueError):
-            downloader.get_dataset_resources("bad-id")
+            await downloader.get_dataset_resources(mock_client, "bad-id")
 
     @patch("tddata.downloader.get_dataset_resources")
-    @patch("tddata.downloader.httpx.stream")
-    def test_download_success(self, mock_stream, mock_get_resources):
+    @patch("tddata.downloader.httpx.AsyncClient")
+    async def test_download_success(self, mock_client_cls, mock_get_resources):
         # Mock resources
         mock_get_resources.return_value = [
             {
@@ -72,25 +90,41 @@ class TestDownloader(unittest.TestCase):
                 "format": "CSV",
                 "url": "http://example.com/file1.csv",
                 "last_modified": "2024-01-01T12:00:00.000000",
-                "size": 100
+                "size": 100,
             },
             {
                 "name": "Resource 2",
-                "format": "PDF", # Should be skipped
+                "format": "PDF",  # Should be skipped
                 "url": "http://example.com/file2.pdf",
-            }
+            },
         ]
 
-        # Mock stream context manager
+        # Mock client and stream
+        mock_client = MagicMock()
+        mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+        # Mock stream response
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.headers = {"Content-Length": "10"}
-        mock_response.iter_bytes.return_value = [b"chunk1", b"chunk2"]
+        mock_response.headers = {"Content-Length": "12"}
 
-        mock_stream.return_value.__enter__.return_value = mock_response
+        # aiter_bytes needs to be an async iterator
+        async def async_iter():
+            yield b"chunk1"
+            yield b"chunk2"
+
+        mock_response.aiter_bytes = lambda chunk_size: async_iter()
+
+        # stream is an async context manager
+        mock_stream_ctx = MagicMock()
+        mock_stream_ctx.__aenter__.return_value = mock_response
+        mock_stream_ctx.__aexit__.return_value = None
+
+        # stream method returns the context manager
+        mock_client.stream.return_value = mock_stream_ctx
 
         # Execute download
-        results = downloader.download(self.test_dir, "fake-dataset")
+        results = await downloader.download(self.test_dir, "fake-dataset")
 
         # Verify
         expected_filename = "resource-1@20240101T120000.csv"
@@ -105,7 +139,8 @@ class TestDownloader(unittest.TestCase):
         self.assertEqual(content, b"chunk1chunk2")
 
     @patch("tddata.downloader.get_dataset_resources")
-    def test_download_skip_existing(self, mock_get_resources):
+    @patch("tddata.downloader.httpx.AsyncClient")
+    async def test_download_skip_existing(self, mock_client_cls, mock_get_resources):
         # Set up an existing file
         filename = "resource-1@20240101T120000.csv"
         filepath = self.test_dir / filename
@@ -118,18 +153,35 @@ class TestDownloader(unittest.TestCase):
                 "format": "CSV",
                 "url": "http://example.com/file1.csv",
                 "last_modified": "2024-01-01T12:00:00.000000",
-                "size": 100
+                "size": 100,
             }
         ]
 
-        # Execute download (should skip)
-        results = downloader.download(self.test_dir, "fake-dataset")
+        mock_client = MagicMock()
+        mock_client_cls.return_value.__aenter__.return_value = mock_client
 
-        # Verify no download call was made (implied by no mock_stream needed)
-        self.assertEqual(len(results), 1)
+        # Execute download (should skip)
+        results = await downloader.download(self.test_dir, "fake-dataset")
+
+        # Verify no stream call was made
+        mock_client.stream.assert_not_called()
+
+        self.assertEqual(
+            len(results), 0
+        )  # The async download returns only downloaded files, filter None
+        # Actually my implementation filters None. existing files return None in download_resource.
+        # Wait, I should double check implementation.
+        # "Filter out None values".
+        # If it exists, download_resource returns None.
+        # So results should be empty list?
+        # Let's check download_resource implementation.
+        # if dest_filepath.exists(): return None.
+        # So yes, results will be empty.
+
         # Check that content is unchanged
         with open(filepath, "r") as f:
             self.assertEqual(f.read(), "existing content")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

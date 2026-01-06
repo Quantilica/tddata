@@ -15,9 +15,10 @@
 
 
 import argparse
+import asyncio
 from pathlib import Path
 
-from . import downloader
+from . import converter, downloader
 from .constants import (
     DATASET_BUYBACKS,
     DATASET_INVESTORS,
@@ -29,16 +30,22 @@ from .constants import (
 
 
 def set_parser():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
+    parser = argparse.ArgumentParser(
+        description="Tesouro Direto Data Downloader & Converter"
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # Download command
+    download_parser = subparsers.add_parser("download", help="Download datasets")
+    download_parser.add_argument(
         "-o",
         "--output",
-        "--data-dir",
         dest="output",
         default=Path("data"),
         type=Path,
+        help="Output directory",
     )
-    parser.add_argument(
+    download_parser.add_argument(
         "--dataset",
         choices=[
             "prices",
@@ -50,16 +57,37 @@ def set_parser():
             "all",
         ],
         default="prices",
-        help="Dataset to download: 'prices', 'operations', 'investors', 'stock', 'buybacks', 'sales' or 'all'",
+        help="Dataset to download",
     )
-    parser.add_argument("--verbose", action="store_true", default=False)
+
+    # Convert command
+    convert_parser = subparsers.add_parser("convert", help="Convert CSV to Parquet")
+    convert_parser.add_argument(
+        "file",
+        type=Path,
+        help="Path to CSV file to convert",
+    )
+    convert_parser.add_argument(
+        "--type",
+        dest="dataset_type",
+        default="infer",
+        choices=[
+            "prices",
+            "operations",
+            "investors",
+            "stock",
+            "buybacks",
+            "sales",
+            "maturities",
+            "infer",
+        ],
+        help="Dataset type (default: infer from filename)",
+    )
+
     return parser
 
 
-def main():
-    parser = set_parser()
-    args = parser.parse_args()
-
+async def run_download(args):
     dataset_map = {
         "prices": DATASET_PRICES_RATES,
         "operations": DATASET_OPERATIONS,
@@ -71,6 +99,30 @@ def main():
 
     if args.dataset == "all":
         for dataset_id in dataset_map.values():
-            downloader.download(args.output, dataset_id=dataset_id)
+            # We run sequential dataset downloads to avoid overwhelming,
+            # but files within dataset are concurrent.
+            # Alternatively, we could gather all, but that's thousands of files.
+            # Let's keep dataset level sequential.
+            await downloader.download(args.output, dataset_id=dataset_id)
     else:
-        downloader.download(args.output, dataset_id=dataset_map[args.dataset])
+        await downloader.download(args.output, dataset_id=dataset_map[args.dataset])
+
+
+def main():
+    parser = set_parser()
+    args = parser.parse_args()
+
+    if args.command == "download":
+        try:
+            asyncio.run(run_download(args))
+        except KeyboardInterrupt:
+            print("\nDownload cancelled.")
+
+    elif args.command == "convert":
+        try:
+            output_path = converter.convert_to_parquet(
+                args.file, dataset_type=args.dataset_type
+            )
+            print(f"Successfully converted to {output_path}")
+        except Exception as e:
+            print(f"Error converting file: {e}")
