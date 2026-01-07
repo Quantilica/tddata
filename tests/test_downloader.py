@@ -14,10 +14,10 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
+import asyncio
 import shutil
 import tempfile
 import unittest
-import asyncio
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 

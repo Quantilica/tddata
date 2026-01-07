@@ -33,11 +33,11 @@ import pandas as pd
 from .constants import (
     AccountStatus,
     Channel,
-    Column,
     Gender,
     TradedLast12Months,
     normalize_bond_type,
 )
+from .constants import Column as C
 
 
 def read_prices(
@@ -74,19 +74,17 @@ def read_prices(
     def _process(df: pd.DataFrame) -> pd.DataFrame:
         df = df.rename(
             columns={
-                "Data Base": Column.REFERENCE_DATE.value,
-                "Tipo Titulo": Column.BOND_TYPE.value,
-                "Data Vencimento": Column.MATURITY_DATE.value,
-                "Taxa Compra Manha": Column.BUY_YIELD.value,
-                "Taxa Venda Manha": Column.SELL_YIELD.value,
-                "PU Compra Manha": Column.BUY_PRICE.value,
-                "PU Venda Manha": Column.SELL_PRICE.value,
-                "PU Base Manha": Column.BASE_PRICE.value,
+                "Data Base": C.REFERENCE_DATE.value,
+                "Tipo Titulo": C.BOND_TYPE.value,
+                "Data Vencimento": C.MATURITY_DATE.value,
+                "Taxa Compra Manha": C.BUY_YIELD.value,
+                "Taxa Venda Manha": C.SELL_YIELD.value,
+                "PU Compra Manha": C.BUY_PRICE.value,
+                "PU Venda Manha": C.SELL_PRICE.value,
+                "PU Base Manha": C.BASE_PRICE.value,
             }
         )
-        df[Column.BOND_TYPE.value] = df[Column.BOND_TYPE.value].apply(
-            normalize_bond_type
-        )
+        df[C.BOND_TYPE.value] = df[C.BOND_TYPE.value].apply(normalize_bond_type)
         return df
 
     if chunksize is None:
@@ -131,17 +129,15 @@ def read_stock(
         df["Mes Estoque"] = pd.to_datetime(df["Mes Estoque"], format="%m/%Y")
         df = df.rename(
             columns={
-                "Tipo Titulo": Column.BOND_TYPE.value,
-                "Vencimento do Titulo": Column.MATURITY_DATE.value,
-                "Mes Estoque": Column.STOCK_MONTH.value,
-                "PU": Column.UNIT_PRICE.value,
-                "Quantidade": Column.QUANTITY.value,
-                "Valor Estoque": Column.STOCK_VALUE.value,
+                "Tipo Titulo": C.BOND_TYPE.value,
+                "Vencimento do Titulo": C.MATURITY_DATE.value,
+                "Mes Estoque": C.STOCK_MONTH.value,
+                "PU": C.UNIT_PRICE.value,
+                "Quantidade": C.QUANTITY.value,
+                "Valor Estoque": C.STOCK_VALUE.value,
             }
         )
-        df[Column.BOND_TYPE.value] = df[Column.BOND_TYPE.value].apply(
-            normalize_bond_type
-        )
+        df[C.BOND_TYPE.value] = df[C.BOND_TYPE.value].apply(normalize_bond_type)
         return df
 
     if chunksize is None:
@@ -185,38 +181,47 @@ def read_investors(
     def _process(df: pd.DataFrame) -> pd.DataFrame:
         df = df.rename(
             columns={
-                "Codigo do Investidor": Column.INVESTOR_ID.value,
-                "Data de Adesao": Column.JOIN_DATE.value,
-                "Estado Civil": Column.MARITAL_STATUS.value,
-                "Genero": Column.GENDER.value,
-                "Profissao": Column.PROFESSION.value,
-                "Idade": Column.AGE.value,
-                "UF do Investidor": Column.STATE.value,
-                "Cidade do Investidor": Column.CITY.value,
-                "Pais do Investidor": Column.COUNTRY.value,
-                "Situacao da Conta": Column.ACCOUNT_STATUS.value,
-                "Operou 12 Meses": Column.TRADED_LAST_12_MONTHS.value,
+                "Codigo do Investidor": C.INVESTOR_ID.value,
+                "Data de Adesao": C.JOIN_DATE.value,
+                "Estado Civil": C.MARITAL_STATUS.value,
+                "Genero": C.GENDER.value,
+                "Profissao": C.PROFESSION.value,
+                "Idade": C.AGE.value,
+                "UF do Investidor": C.STATE.value,
+                "Cidade do Investidor": C.CITY.value,
+                "Pais do Investidor": C.COUNTRY.value,
+                "Situacao da Conta": C.ACCOUNT_STATUS.value,
+                "Operou 12 Meses": C.TRADED_LAST_12_MONTHS.value,
             }
         )
+
+        # Convert object columns to categorical dtype for efficiency
+        df[C.MARITAL_STATUS.value] = df[C.MARITAL_STATUS.value].astype("category")
+        df[C.PROFESSION.value] = df[C.PROFESSION.value].astype("category")
+        df[C.STATE.value] = df[C.STATE.value].astype("category")
+        df[C.CITY.value] = df[C.CITY.value].astype("category")
+        df[C.COUNTRY.value] = df[C.COUNTRY.value].astype("category")
 
         # Map categorical values to enum values for better semantics
         # Keep original values for MaritalStatus as they're already descriptive
 
         # Map gender codes to enum values
         gender_map = {e.value: e.value for e in Gender}
-        df[Column.GENDER.value] = df[Column.GENDER.value].map(gender_map)
+        df[C.GENDER.value] = df[C.GENDER.value].map(gender_map)
+        # Convert to categorical dtype for efficiency
+        df[C.GENDER.value] = df[C.GENDER.value].astype("category")
 
         # Map account status codes to enum values
         status_map = {e.value: e.value for e in AccountStatus}
-        df[Column.ACCOUNT_STATUS.value] = df[Column.ACCOUNT_STATUS.value].map(
-            status_map
-        )
+        df[C.ACCOUNT_STATUS.value] = df[C.ACCOUNT_STATUS.value].map(status_map)
+        # Convert to categorical dtype for efficiency
+        df[C.ACCOUNT_STATUS.value] = df[C.ACCOUNT_STATUS.value].astype("category")
 
         # Map traded last 12 months codes to enum values
         traded_map = {e.value: e.value for e in TradedLast12Months}
-        df[Column.TRADED_LAST_12_MONTHS.value] = df[
-            Column.TRADED_LAST_12_MONTHS.value
-        ].map(traded_map)
+        df[C.TRADED_LAST_12_MONTHS.value] = df[C.TRADED_LAST_12_MONTHS.value].map(traded_map)
+        # Convert to categorical dtype for efficiency
+        df[C.TRADED_LAST_12_MONTHS.value] = df[C.TRADED_LAST_12_MONTHS.value].astype("category")
         return df
 
     if chunksize is None:
@@ -259,25 +264,31 @@ def read_operations(
     def _process(df: pd.DataFrame) -> pd.DataFrame:
         df = df.rename(
             columns={
-                "Codigo do Investidor": Column.INVESTOR_ID.value,
-                "Data da Operacao": Column.OPERATION_DATE.value,
-                "Tipo Titulo": Column.BOND_TYPE.value,
-                "Vencimento do Titulo": Column.MATURITY_DATE.value,
-                "Quantidade": Column.QUANTITY.value,
-                "Valor do Titulo": Column.BOND_VALUE.value,
-                "Valor da Operacao": Column.OPERATION_VALUE.value,
-                "Tipo da Operacao": Column.OPERATION_TYPE.value,
-                "Canal da Operacao": Column.CHANNEL.value,
+                "Codigo do Investidor": C.INVESTOR_ID.value,
+                "Data da Operacao": C.OPERATION_DATE.value,
+                "Tipo Titulo": C.BOND_TYPE.value,
+                "Vencimento do Titulo": C.MATURITY_DATE.value,
+                "Quantidade": C.QUANTITY.value,
+                "Valor do Titulo": C.BOND_VALUE.value,
+                "Valor da Operacao": C.OPERATION_VALUE.value,
+                "Tipo da Operacao": C.OPERATION_TYPE.value,
+                "Canal da Operacao": C.CHANNEL.value,
             }
         )
 
+        # Convert datetime columns to appropriate dtypes
+        df[C.OPERATION_DATE.value] = pd.to_datetime(df[C.OPERATION_DATE.value])
+        df[C.MATURITY_DATE.value] = pd.to_datetime(df[C.MATURITY_DATE.value])
+
         # Map channel codes to enum values
         channel_map = {e.value: e.value for e in Channel}
-        df[Column.CHANNEL.value] = df[Column.CHANNEL.value].map(channel_map)
+        df[C.CHANNEL.value] = df[C.CHANNEL.value].map(channel_map)
+        # Convert to categorical dtype for efficiency
+        df[C.CHANNEL.value] = df[C.CHANNEL.value].astype("category")
 
-        df[Column.BOND_TYPE.value] = df[Column.BOND_TYPE.value].apply(
-            normalize_bond_type
-        )
+        df[C.BOND_TYPE.value] = df[C.BOND_TYPE.value].apply(normalize_bond_type)
+        # Convert to categorical dtype for efficiency
+        df[C.BOND_TYPE.value] = df[C.BOND_TYPE.value].astype("category")
         return df
 
     if chunksize is None:
@@ -317,17 +328,15 @@ def read_sales(
     def _process(df: pd.DataFrame) -> pd.DataFrame:
         df = df.rename(
             columns={
-                "Tipo Titulo": Column.BOND_TYPE.value,
-                "Vencimento do Titulo": Column.MATURITY_DATE.value,
-                "Data Venda": Column.SALE_DATE.value,
-                "PU": Column.UNIT_PRICE.value,
-                "Quantidade": Column.QUANTITY.value,
-                "Valor": Column.VALUE.value,
+                "Tipo Titulo": C.BOND_TYPE.value,
+                "Vencimento do Titulo": C.MATURITY_DATE.value,
+                "Data Venda": C.SALE_DATE.value,
+                "PU": C.UNIT_PRICE.value,
+                "Quantidade": C.QUANTITY.value,
+                "Valor": C.VALUE.value,
             }
         )
-        df[Column.BOND_TYPE.value] = df[Column.BOND_TYPE.value].apply(
-            normalize_bond_type
-        )
+        df[C.BOND_TYPE.value] = df[C.BOND_TYPE.value].apply(normalize_bond_type)
         return df
 
     if chunksize is None:
@@ -366,16 +375,14 @@ def read_buybacks(
     def _process(df: pd.DataFrame) -> pd.DataFrame:
         df = df.rename(
             columns={
-                "Tipo Titulo": Column.BOND_TYPE.value,
-                "Vencimento do Titulo": Column.MATURITY_DATE.value,
-                "Data Resgate": Column.BUYBACK_DATE.value,
-                "Quantidade": Column.QUANTITY.value,
-                "Valor": Column.VALUE.value,
+                "Tipo Titulo": C.BOND_TYPE.value,
+                "Vencimento do Titulo": C.MATURITY_DATE.value,
+                "Data Resgate": C.BUYBACK_DATE.value,
+                "Quantidade": C.QUANTITY.value,
+                "Valor": C.VALUE.value,
             }
         )
-        df[Column.BOND_TYPE.value] = df[Column.BOND_TYPE.value].apply(
-            normalize_bond_type
-        )
+        df[C.BOND_TYPE.value] = df[C.BOND_TYPE.value].apply(normalize_bond_type)
         return df
 
     if chunksize is None:
@@ -415,17 +422,15 @@ def read_maturities(
     def _process(df: pd.DataFrame) -> pd.DataFrame:
         df = df.rename(
             columns={
-                "Tipo Titulo": Column.BOND_TYPE.value,
-                "Vencimento do Titulo": Column.MATURITY_DATE.value,
-                "Data Resgate": Column.BUYBACK_DATE.value,
-                "PU": Column.UNIT_PRICE.value,
-                "Quantidade": Column.QUANTITY.value,
-                "Valor": Column.VALUE.value,
+                "Tipo Titulo": C.BOND_TYPE.value,
+                "Vencimento do Titulo": C.MATURITY_DATE.value,
+                "Data Resgate": C.BUYBACK_DATE.value,
+                "PU": C.UNIT_PRICE.value,
+                "Quantidade": C.QUANTITY.value,
+                "Valor": C.VALUE.value,
             }
         )
-        df[Column.BOND_TYPE.value] = df[Column.BOND_TYPE.value].apply(
-            normalize_bond_type
-        )
+        df[C.BOND_TYPE.value] = df[C.BOND_TYPE.value].apply(normalize_bond_type)
         return df
 
     if chunksize is None:

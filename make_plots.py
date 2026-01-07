@@ -22,7 +22,7 @@ import pandas as pd
 import seaborn as sns
 
 from tddata import plot, reader, storage
-from tddata.constants import Column
+from tddata.constants import Column as C
 
 # Set the style of the plot
 sns.set_theme(style="ticks")
@@ -53,14 +53,14 @@ def run_prices(data_dir: Path):
     data = reader.read_prices(f)
 
     variables = [
-        Column.BUY_PRICE.value,
-        Column.BUY_YIELD.value,
-        Column.SELL_PRICE.value,
-        Column.SELL_YIELD.value,
-        Column.BASE_PRICE.value,
+        C.BUY_PRICE.value,
+        C.BUY_YIELD.value,
+        C.SELL_PRICE.value,
+        C.SELL_YIELD.value,
+        C.BASE_PRICE.value,
     ]
 
-    for bond_type in data[Column.BOND_TYPE.value].unique():
+    for bond_type in data[C.BOND_TYPE.value].unique():
         # Clean filename friendly bond type
         bond_slug = storage.slugify(bond_type)
         for var in variables:
@@ -114,11 +114,9 @@ def run_investors(data_dir: Path):
         return
 
     full_data = pd.concat(all_data, ignore_index=True)
-    full_data = full_data.drop_duplicates(
-        subset=[Column.INVESTOR_ID.value, Column.JOIN_DATE.value]
-    )
+    full_data = full_data.drop_duplicates(subset=[C.INVESTOR_ID.value, C.JOIN_DATE.value])
     # Drop dates before 2000
-    full_data = full_data[full_data[Column.JOIN_DATE.value] >= "2000-01-01"]
+    full_data = full_data[full_data[C.JOIN_DATE.value] >= "2000-01-01"]
 
     # Plot population pyramid (age by gender)
     print("  Plotting population pyramid (age by gender)...")
@@ -127,16 +125,16 @@ def run_investors(data_dir: Path):
 
     # Plot other demographics
     demographics = [
-        Column.STATE.value,
-        Column.PROFESSION.value,
-        Column.MARITAL_STATUS.value,
+        C.STATE.value,
+        C.PROFESSION.value,
+        C.MARITAL_STATUS.value,
     ]
 
     for demo in demographics:
         print(f"  Plotting demographics: {demo}...")
 
         kind = "bar"
-        if demo in [Column.PROFESSION.value, Column.MARITAL_STATUS.value]:
+        if demo in [C.PROFESSION.value, C.MARITAL_STATUS.value]:
             kind = "barh"
 
         fig = plot.plot_investors_demographics(full_data, column=demo, chart_type=kind)
