@@ -1,6 +1,6 @@
 [project]
 name = "tddata"
-version = "1.1.1"
+version = "1.1.2"
 authors = [
   { name="Komesu, D.K.", email="daniel@dkko.me" },
 ]
