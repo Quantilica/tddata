@@ -19,7 +19,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from tddata import downloader
 
@@ -103,6 +103,12 @@ class TestDownloader(unittest.IsolatedAsyncioTestCase):
         mock_client = MagicMock()
         mock_client_cls.return_value.__aenter__.return_value = mock_client
 
+        # Mock head response
+        mock_head_response = MagicMock()
+        mock_head_response.raise_for_status = MagicMock()
+        mock_head_response.headers.get.return_value = "12"
+        mock_client.head = AsyncMock(return_value=mock_head_response)
+
         # Mock stream response
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -153,12 +159,18 @@ class TestDownloader(unittest.IsolatedAsyncioTestCase):
                 "format": "CSV",
                 "url": "http://example.com/file1.csv",
                 "last_modified": "2024-01-01T12:00:00.000000",
-                "size": 100,
+                "size": 16,  # Match the file size
             }
         ]
 
         mock_client = MagicMock()
         mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+        # Mock head response
+        mock_head_response = MagicMock()
+        mock_head_response.raise_for_status = MagicMock()
+        mock_head_response.headers.get.return_value = "16"
+        mock_client.head = AsyncMock(return_value=mock_head_response)
 
         # Execute download (should skip)
         results = await downloader.download(self.test_dir, "fake-dataset")
@@ -166,17 +178,7 @@ class TestDownloader(unittest.IsolatedAsyncioTestCase):
         # Verify no stream call was made
         mock_client.stream.assert_not_called()
 
-        self.assertEqual(
-            len(results), 0
-        )  # The async download returns only downloaded files, filter None
-        # Actually my implementation filters None. existing files return None in download_resource.
-        # Wait, I should double check implementation.
-        # "Filter out None values".
-        # If it exists, download_resource returns None.
-        # So results should be empty list?
-        # Let's check download_resource implementation.
-        # if dest_filepath.exists(): return None.
-        # So yes, results will be empty.
+        self.assertEqual(len(results), 0)
 
         # Check that content is unchanged
         with open(filepath, "r") as f:

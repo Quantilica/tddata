@@ -24,7 +24,7 @@ import httpx
 from tqdm.asyncio import tqdm
 
 from .constants import CKAN_API_URL, HTTP_HEADERS
-from .storage import generate_filename
+from .storage import generate_filename, get_latest_file
 
 
 async def get_dataset_resources(
@@ -52,32 +52,37 @@ async def download_resource(
     filename = generate_filename(resource["name"], last_modified_str)
     dest_filepath = dest_dir / filename
 
-    if dest_filepath.exists():
-        # Ideally we check for size/content, but for now assuming name uniqueness via timestamp
+    # Get expected size via HEAD request
+    total_size = 0
+    try:
+        async with semaphore:
+            head_response = await client.head(url, headers=HTTP_HEADERS, timeout=10.0)
+            head_response.raise_for_status()
+            total_size = int(head_response.headers.get("Content-Length", 0))
+            if total_size == 0 and resource.get("size"):
+                total_size = int(resource["size"])
+    except Exception as e:
+        print(f"Failed to get size for {url}: {e}")
+        # Proceed with download anyway
+
+    # Check if latest file for this resource has the same size
+    slug = filename.split("@")[0]
+    latest_file = get_latest_file(dest_dir, f"{slug}*.csv")
+    if latest_file and latest_file.stat().st_size == total_size and total_size > 0:
         return None
 
     try:
         async with semaphore:
-            # Get total size for progress bar
-            # We use a HEAD request or just start streaming
-            # Let's stream directly
-            async with client.stream(
-                "GET", url, headers=HTTP_HEADERS, timeout=60.0
-            ) as response:
+            async with client.stream("GET", url, headers=HTTP_HEADERS, timeout=60.0) as response:
                 response.raise_for_status()
-                total_size = int(response.headers.get("Content-Length", 0))
-                if total_size == 0 and resource.get("size"):
-                    total_size = int(resource["size"])
+                if total_size == 0:
+                    total_size = int(response.headers.get("Content-Length", 0))
+                    if total_size == 0 and resource.get("size"):
+                        total_size = int(resource["size"])
 
                 desc = f"Downloading {filename[:30]}..."
                 with open(dest_filepath, "wb") as f:
-                    with tqdm(
-                        total=total_size,
-                        unit="B",
-                        unit_scale=True,
-                        desc=desc,
-                        leave=False,
-                    ) as pbar:
+                    with tqdm(total=total_size, unit="B", unit_scale=True, desc=desc, leave=False) as pbar:
                         async for chunk in response.aiter_bytes(chunk_size=8192):
                             f.write(chunk)
                             pbar.update(len(chunk))
@@ -96,9 +101,7 @@ async def download_resource(
         return None
 
 
-async def download(
-    dest_dir: Path, dataset_id: str, max_concurrency: int = 3
-) -> List[Dict]:
+async def download(dest_dir: Path, dataset_id: str, max_concurrency: int = 3) -> List[Dict]:
     """Download data files concurrently.
 
     Args:
