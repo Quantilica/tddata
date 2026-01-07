@@ -18,28 +18,18 @@ import pandas as pd
 
 from .constants import (
     AccountStatus,
-    Column,
     Gender,
     OperationType,
     TradedLast12Months,
 )
+from .constants import Column as C
 
 
 def aggregate_stock(data: pd.DataFrame, by_bond_type: bool = True) -> pd.DataFrame:
     """Aggregate stock value by month and optionally bond type."""
     if by_bond_type:
-        return (
-            data.groupby([Column.STOCK_MONTH.value, Column.BOND_TYPE.value])[
-                Column.STOCK_VALUE.value
-            ]
-            .sum()
-            .reset_index()
-        )
-    return (
-        data.groupby([Column.STOCK_MONTH.value])[Column.STOCK_VALUE.value]
-        .sum()
-        .reset_index()
-    )
+        return data.groupby([C.STOCK_MONTH.value, C.BOND_TYPE.value])[C.STOCK_VALUE.value].sum().reset_index()
+    return data.groupby([C.STOCK_MONTH.value])[C.STOCK_VALUE.value].sum().reset_index()
 
 
 def prepare_demographics_counts(
@@ -50,18 +40,18 @@ def prepare_demographics_counts(
 
     # Deduplicate by investor ID to avoid counting same investor multiple times
     # (investors can have multiple records if registered with multiple institutions)
-    if Column.INVESTOR_ID.value in df.columns:
-        df = df.drop_duplicates(subset=[Column.INVESTOR_ID.value], keep="first")
+    if C.INVESTOR_ID.value in df.columns:
+        df = df.drop_duplicates(subset=[C.INVESTOR_ID.value], keep="first")
 
     # Map enum codes to human-readable labels
-    if column == Column.GENDER.value:
+    if column == C.GENDER.value:
         df[column] = df[column].map(Gender.get_labels())
-    elif column == Column.ACCOUNT_STATUS.value:
+    elif column == C.ACCOUNT_STATUS.value:
         df[column] = df[column].map(AccountStatus.get_labels())
-    elif column == Column.TRADED_LAST_12_MONTHS.value:
+    elif column == C.TRADED_LAST_12_MONTHS.value:
         df[column] = df[column].map(TradedLast12Months.get_labels())
 
-    if column == Column.AGE.value:
+    if column == C.AGE.value:
         return df[column].value_counts().sort_index()
     return df[column].value_counts().head(top_n)
 
@@ -72,38 +62,30 @@ def prepare_population_pyramid(data: pd.DataFrame) -> pd.DataFrame:
 
     # Deduplicate by investor ID to avoid counting same investor multiple times
     # (investors can have multiple records if registered with multiple institutions)
-    if Column.INVESTOR_ID.value in df.columns:
-        df = df.drop_duplicates(subset=[Column.INVESTOR_ID.value], keep="first")
+    if C.INVESTOR_ID.value in df.columns:
+        df = df.drop_duplicates(subset=[C.INVESTOR_ID.value], keep="first")
 
-    df = df[[Column.AGE.value, Column.GENDER.value]].copy()
+    df = df[[C.AGE.value, C.GENDER.value]].copy()
 
     # Map gender codes to labels
-    df[Column.GENDER.value] = df[Column.GENDER.value].map(Gender.get_labels())
+    df[C.GENDER.value] = df[C.GENDER.value].map(Gender.get_labels())
 
     # Create age bins (5-year intervals)
-    if df[Column.AGE.value].dropna().empty:
+    if df[C.AGE.value].dropna().empty:
         return pd.DataFrame()
 
-    max_age = int(df[Column.AGE.value].max())
-    min_age = int(df[Column.AGE.value].min())
+    max_age = int(df[C.AGE.value].max())
+    min_age = int(df[C.AGE.value].min())
     bins = list(range(min_age - (min_age % 5), max_age + 5, 5))
     labels = [f"{i}-{i + 4}" for i in bins[:-1]]
 
-    df["age_group"] = pd.cut(
-        df[Column.AGE.value], bins=bins, labels=labels, right=False
-    )
+    df["age_group"] = pd.cut(df[C.AGE.value], bins=bins, labels=labels, right=False)
 
     # Count by age group and gender
-    grouped = (
-        df.groupby(["age_group", Column.GENDER.value], observed=False)
-        .size()
-        .reset_index(name="count")
-    )
+    grouped = df.groupby(["age_group", C.GENDER.value], observed=False).size().reset_index(name="count")
 
     # Pivot to get male and female columns
-    pivoted = grouped.pivot(
-        index="age_group", columns=Column.GENDER.value, values="count"
-    ).fillna(0)
+    pivoted = grouped.pivot(index="age_group", columns=C.GENDER.value, values="count").fillna(0)
 
     return pivoted
 
@@ -114,30 +96,22 @@ def aggregate_new_investors(data: pd.DataFrame, freq: str = "ME") -> pd.DataFram
 
     # Deduplicate by investor ID to avoid counting same investor multiple times
     # (investors can have multiple records if registered with multiple institutions)
-    if Column.INVESTOR_ID.value in df.columns:
-        df = df.drop_duplicates(subset=[Column.INVESTOR_ID.value], keep="first")
+    if C.INVESTOR_ID.value in df.columns:
+        df = df.drop_duplicates(subset=[C.INVESTOR_ID.value], keep="first")
 
-    return df.set_index(Column.JOIN_DATE.value).resample(freq).size().reset_index(name="new_investors")
+    return df.set_index(C.JOIN_DATE.value).resample(freq).size().reset_index(name="new_investors")
 
 
 def aggregate_operations(data: pd.DataFrame, by_type: bool = True) -> pd.DataFrame:
     """Aggregate operations by month and optionally type."""
     df = data.copy()
-    df["month"] = df[Column.OPERATION_DATE.value].dt.to_period("M").dt.to_timestamp()
+    df["month"] = df[C.OPERATION_DATE.value].dt.to_period("M").dt.to_timestamp()
 
     if by_type:
-        df[Column.OPERATION_TYPE.value] = df[Column.OPERATION_TYPE.value].replace(
-            OperationType.get_labels()
-        )
-        return (
-            df.groupby(["month", Column.OPERATION_TYPE.value])[
-                Column.OPERATION_VALUE.value
-            ]
-            .sum()
-            .reset_index()
-        )
+        df[C.OPERATION_TYPE.value] = df[C.OPERATION_TYPE.value].replace(OperationType.get_labels())
+        return df.groupby(["month", C.OPERATION_TYPE.value])[C.OPERATION_VALUE.value].sum().reset_index()
 
-    return df.groupby("month")[Column.OPERATION_VALUE.value].sum().reset_index()
+    return df.groupby("month")[C.OPERATION_VALUE.value].sum().reset_index()
 
 
 def aggregate_value_over_time(
