@@ -20,15 +20,19 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "httpx",
-    "pandas",
+    "httpx>=0.28.1",
+    "pandas>=2.3.3",
     "pyarrow>=22.0.0",
-    "seaborn",
-    "tqdm",
+    "seaborn>=0.13.2",
+    "tqdm>=4.67.1",
 ]
 
 [project.scripts]
 tddata = "tddata.cli:main"
+
+[tool.ruff]
+line-length = 120
+lint.select = ["I"]
 
 [project.urls]
 Homepage = "https://github.com/dankkom/tddata"
