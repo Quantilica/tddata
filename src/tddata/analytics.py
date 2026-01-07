@@ -48,6 +48,11 @@ def prepare_demographics_counts(
     """Get value counts for demographics data with human readable labels."""
     df = data.copy()
 
+    # Deduplicate by investor ID to avoid counting same investor multiple times
+    # (investors can have multiple records if registered with multiple institutions)
+    if Column.INVESTOR_ID.value in df.columns:
+        df = df.drop_duplicates(subset=[Column.INVESTOR_ID.value], keep="first")
+
     # Map enum codes to human-readable labels
     if column == Column.GENDER.value:
         df[column] = df[column].map(Gender.get_labels())
@@ -63,7 +68,14 @@ def prepare_demographics_counts(
 
 def prepare_population_pyramid(data: pd.DataFrame) -> pd.DataFrame:
     """Prepare data for population pyramid (age bins x gender)."""
-    df = data[[Column.AGE.value, Column.GENDER.value]].copy()
+    df = data.copy()
+
+    # Deduplicate by investor ID to avoid counting same investor multiple times
+    # (investors can have multiple records if registered with multiple institutions)
+    if Column.INVESTOR_ID.value in df.columns:
+        df = df.drop_duplicates(subset=[Column.INVESTOR_ID.value], keep="first")
+
+    df = df[[Column.AGE.value, Column.GENDER.value]].copy()
 
     # Map gender codes to labels
     df[Column.GENDER.value] = df[Column.GENDER.value].map(Gender.get_labels())
@@ -98,12 +110,14 @@ def prepare_population_pyramid(data: pd.DataFrame) -> pd.DataFrame:
 
 def aggregate_new_investors(data: pd.DataFrame, freq: str = "ME") -> pd.DataFrame:
     """Resample new investors data by frequency."""
-    return (
-        data.set_index(Column.JOIN_DATE.value)
-        .resample(freq)
-        .size()
-        .reset_index(name="new_investors")
-    )
+    df = data.copy()
+
+    # Deduplicate by investor ID to avoid counting same investor multiple times
+    # (investors can have multiple records if registered with multiple institutions)
+    if Column.INVESTOR_ID.value in df.columns:
+        df = df.drop_duplicates(subset=[Column.INVESTOR_ID.value], keep="first")
+
+    return df.set_index(Column.JOIN_DATE.value).resample(freq).size().reset_index(name="new_investors")
 
 
 def aggregate_operations(data: pd.DataFrame, by_type: bool = True) -> pd.DataFrame:

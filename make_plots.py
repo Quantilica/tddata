@@ -114,7 +114,9 @@ def run_investors(data_dir: Path):
         return
 
     full_data = pd.concat(all_data, ignore_index=True)
-    full_data = full_data.drop_duplicates(subset=[C.INVESTOR_ID.value, C.JOIN_DATE.value])
+    # Deduplicate by investor ID only (investors can have multiple records if registered with multiple institutions)
+    # Keep the first occurrence
+    full_data = full_data.drop_duplicates(subset=[C.INVESTOR_ID.value], keep="first")
     # Drop dates before 2000
     full_data = full_data[full_data[C.JOIN_DATE.value] >= "2000-01-01"]
 
