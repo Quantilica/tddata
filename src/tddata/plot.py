@@ -23,10 +23,8 @@ import pandas as pd
 import seaborn as sns
 
 from . import analytics
-from .constants import (
-    Column,
-    Gender,
-)
+from .constants import Column as C
+from .constants import Gender
 
 
 def human_format(num, pos):
@@ -46,32 +44,30 @@ def human_format(num, pos):
 
 
 def plot_prices(data: pd.DataFrame, bond_type: str, variable: str):
-    subset = data[
-        (data[Column.BOND_TYPE.value] == bond_type)
-        & (data[Column.BUY_PRICE.value] > 0)
-        & (data[Column.SELL_PRICE.value] > 0)
-    ]
+    # To avoid long code lines we create conditions separately
+    cond_a = data[C.BOND_TYPE.value] == bond_type  # Filter by bond type
+    cond_b = data[C.BUY_PRICE.value] > 0  # Filter out rows with zero prices
+    cond_c = data[C.SELL_PRICE.value] > 0  # Filter out rows with zero prices
+    subset = data[cond_a & cond_b & cond_c]
     # Sort the data by maturity date
-    subset = subset.sort_values(
-        by=[Column.MATURITY_DATE.value, Column.REFERENCE_DATE.value]
-    )
+    subset = subset.sort_values(by=[C.MATURITY_DATE.value, C.REFERENCE_DATE.value])
     variable_description = ""
-    if variable == Column.BUY_YIELD.value:
+    if variable == C.BUY_YIELD.value:
         variable_description = "Buy Yield (%)"
-    elif variable == Column.SELL_YIELD.value:
+    elif variable == C.SELL_YIELD.value:
         variable_description = "Sell Yield (%)"
-    elif variable == Column.BUY_PRICE.value:
+    elif variable == C.BUY_PRICE.value:
         variable_description = "Buy Price (R$)"
-    elif variable == Column.SELL_PRICE.value:
+    elif variable == C.SELL_PRICE.value:
         variable_description = "Sell Price (R$)"
-    elif variable == Column.BASE_PRICE.value:
+    elif variable == C.BASE_PRICE.value:
         variable_description = "Base Price (R$)"
     f, ax = plt.subplots(figsize=(10, 5))
     sns.lineplot(
         data=subset,
-        x=Column.REFERENCE_DATE.value,
+        x=C.REFERENCE_DATE.value,
         y=variable,
-        hue=Column.MATURITY_DATE.value,
+        hue=C.MATURITY_DATE.value,
         estimator=None,
         ax=ax,
         palette="viridis",
@@ -131,17 +127,17 @@ def plot_stock(data: pd.DataFrame, by_bond_type: bool = True):
     if by_bond_type:
         sns.lineplot(
             data=df_grouped,
-            x=Column.STOCK_MONTH.value,
-            y=Column.STOCK_VALUE.value,
-            hue=Column.BOND_TYPE.value,
+            x=C.STOCK_MONTH.value,
+            y=C.STOCK_VALUE.value,
+            hue=C.BOND_TYPE.value,
             ax=ax,
         )
         ax.legend(title="Bond Type")
     else:
         sns.lineplot(
             data=df_grouped,
-            x=Column.STOCK_MONTH.value,
-            y=Column.STOCK_VALUE.value,
+            x=C.STOCK_MONTH.value,
+            y=C.STOCK_VALUE.value,
             ax=ax,
         )
 
@@ -157,7 +153,7 @@ def plot_stock(data: pd.DataFrame, by_bond_type: bool = True):
 
 def plot_investors_demographics(
     data: pd.DataFrame,
-    column: str = Column.STATE.value,
+    column: str = C.STATE.value,
     top_n: int = 15,
     chart_type: str = "bar",
 ):
@@ -232,7 +228,7 @@ def _plot_demographics_bar(ax, counts: pd.Series, human_col: str, column: str):
     ax.yaxis.set_major_formatter(ticker.FuncFormatter(human_format))
 
     # For age, limit the number of x-axis ticks to avoid overcrowding
-    if column == Column.AGE.value:
+    if column == C.AGE.value:
         ax.xaxis.set_major_locator(ticker.MaxNLocator(nbins=20, integer=True))
 
     plt.xticks(rotation=45)
@@ -305,7 +301,7 @@ def plot_investors_evolution(data: pd.DataFrame, freq: str = "ME"):
 
     resampled = analytics.aggregate_new_investors(data, freq)
 
-    sns.lineplot(data=resampled, x=Column.JOIN_DATE.value, y="new_investors", ax=ax)
+    sns.lineplot(data=resampled, x=C.JOIN_DATE.value, y="new_investors", ax=ax)
 
     ax.set_title("New Investors Over Time")
     ax.set_ylabel("Number of New Investors")
@@ -327,13 +323,13 @@ def plot_operations(data: pd.DataFrame, by_type: bool = True):
         sns.lineplot(
             data=grouped,
             x="month",
-            y=Column.OPERATION_VALUE.value,
-            hue=Column.OPERATION_TYPE.value,
+            y=C.OPERATION_VALUE.value,
+            hue=C.OPERATION_TYPE.value,
             ax=ax,
         )
         ax.legend(title="Operation Type")
     else:
-        sns.lineplot(data=grouped, x="month", y=Column.OPERATION_VALUE.value, ax=ax)
+        sns.lineplot(data=grouped, x="month", y=C.OPERATION_VALUE.value, ax=ax)
 
     ax.set_title("Operations Volume Over Time")
     ax.set_ylabel("Total Value (R$)")
@@ -349,10 +345,10 @@ def plot_sales(data: pd.DataFrame, by_bond_type: bool = True):
     """Plot sales value over time."""
     return _plot_value_over_time(
         data,
-        date_col=Column.SALE_DATE.value,
-        value_col=Column.VALUE.value,
+        date_col=C.SALE_DATE.value,
+        value_col=C.VALUE.value,
         title="Sales Volume Over Time",
-        hue_col=Column.BOND_TYPE.value if by_bond_type else None,
+        hue_col=C.BOND_TYPE.value if by_bond_type else None,
         legend_title="Bond Type",
     )
 
@@ -361,10 +357,10 @@ def plot_buybacks(data: pd.DataFrame, by_bond_type: bool = True):
     """Plot buybacks (redemptions) value over time."""
     return _plot_value_over_time(
         data,
-        date_col=Column.BUYBACK_DATE.value,
-        value_col=Column.VALUE.value,
+        date_col=C.BUYBACK_DATE.value,
+        value_col=C.VALUE.value,
         title="Buybacks Volume Over Time",
-        hue_col=Column.BOND_TYPE.value if by_bond_type else None,
+        hue_col=C.BOND_TYPE.value if by_bond_type else None,
         legend_title="Bond Type",
     )
 
@@ -373,10 +369,10 @@ def plot_maturities(data: pd.DataFrame, by_bond_type: bool = True):
     """Plot maturities value over time."""
     return _plot_value_over_time(
         data,
-        date_col=Column.BUYBACK_DATE.value,  # Maturities file uses 'Data Resgate' -> BUYBACK_DATE/REDEMPTION_DATE
-        value_col=Column.VALUE.value,
+        date_col=C.BUYBACK_DATE.value,  # Maturities file uses 'Data Resgate' -> BUYBACK_DATE/REDEMPTION_DATE
+        value_col=C.VALUE.value,
         title="Maturities Volume Over Time",
-        hue_col=Column.BOND_TYPE.value if by_bond_type else None,
+        hue_col=C.BOND_TYPE.value if by_bond_type else None,
         legend_title="Bond Type",
     )
 
@@ -385,10 +381,10 @@ def plot_interest_coupons(data: pd.DataFrame, by_bond_type: bool = True):
     """Plot interest coupons payments value over time."""
     return _plot_value_over_time(
         data,
-        date_col=Column.BUYBACK_DATE.value,  # Interest coupons file uses 'Data Resgate' similar to maturities
-        value_col=Column.VALUE.value,
+        date_col=C.BUYBACK_DATE.value,  # Interest coupons file uses 'Data Resgate' similar to maturities
+        value_col=C.VALUE.value,
         title="Interest Coupons Payments Over Time",
-        hue_col=Column.BOND_TYPE.value if by_bond_type else None,
+        hue_col=C.BOND_TYPE.value if by_bond_type else None,
         legend_title="Bond Type",
     )
 
@@ -422,21 +418,6 @@ def _plot_value_over_time(
     sns.despine(ax=ax)
     f.tight_layout()
     return f
-
-
-def _add_footer(fig):
-    fig.text(
-        0.01,
-        0.01,
-        "Data source: Tesouro Direto",
-        horizontalalignment="left",
-        fontsize=8,
-        color="gray",
-    )
-
-
-def _humanize_label(label: str) -> str:
-    return label.replace("_", " ").title()
 
 
 def _add_footer(fig):
