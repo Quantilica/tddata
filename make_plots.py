@@ -171,7 +171,7 @@ def run_operations(data_dir: Path):
 
 
 def run_sales(data_dir: Path):
-    f = storage.get_latest_file(data_dir, "vendas-do-tesouro-direto-*.csv")
+    f = storage.get_latest_file(data_dir, "vendas-do-tesouro-direto*.csv")
     if not f:
         print("No sales file found.")
         return
