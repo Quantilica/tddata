@@ -12,7 +12,7 @@ This document presents visualizations of Brazilian Treasury Direct (Tesouro Dire
   - [Tesouro IPCA+](#tesouro-ipca)
   - [Tesouro IPCA+ com Juros Semestrais](#tesouro-ipca-com-juros-semestrais)
   - [Tesouro IGPM+ com Juros Semestrais](#tesouro-igpm-com-juros-semestrais)
-  - [Tesouro RendA+](#tesouro-renda-aposentadoria-extra)
+  - [Tesouro RendA+](#tesouro-renda)
   - [Tesouro Educa+](#tesouro-educa)
 
 ---
@@ -216,19 +216,19 @@ Indexed to the IGPM inflation index with semi-annual coupon payments (legacy sec
 Designed for retirement planning, the Tesouro RendA+ (Aposentadoria Extra) provides monthly income payments after a specified future date.
 
 #### Base Price
-![Tesouro RendA+ - Base Price](plots/prices_tesouro-renda-aposentadoria-extra_base_price.png)
+![Tesouro RendA+ - Base Price](plots/prices_tesouro-renda_base_price.png)
 
 #### Buy Price
-![Tesouro RendA+ - Buy Price](plots/prices_tesouro-renda-aposentadoria-extra_buy_price.png)
+![Tesouro RendA+ - Buy Price](plots/prices_tesouro-renda_buy_price.png)
 
 #### Buy Yield
-![Tesouro RendA+ - Buy Yield](plots/prices_tesouro-renda-aposentadoria-extra_buy_yield.png)
+![Tesouro RendA+ - Buy Yield](plots/prices_tesouro-renda_buy_yield.png)
 
 #### Sell Price
-![Tesouro RendA+ - Sell Price](plots/prices_tesouro-renda-aposentadoria-extra_sell_price.png)
+![Tesouro RendA+ - Sell Price](plots/prices_tesouro-renda_sell_price.png)
 
 #### Sell Yield
-![Tesouro RendA+ - Sell Yield](plots/prices_tesouro-renda-aposentadoria-extra_sell_yield.png)
+![Tesouro RendA+ - Sell Yield](plots/prices_tesouro-renda_sell_yield.png)
 
 ---
 
