@@ -14,7 +14,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-from . import downloader, plot, reader
+from . import downloader
 from .constants import (
     AccountStatus,
     BondType,
@@ -26,10 +26,18 @@ from .constants import (
     TradedLast12Months,
 )
 
+# Optional imports - only available if analysis extras are installed
+try:
+    from . import plot, reader
+
+    _HAS_ANALYSIS = True
+except ImportError:
+    _HAS_ANALYSIS = False
+    plot = None  # type: ignore
+    reader = None  # type: ignore
+
 __all__ = [
     "downloader",
-    "plot",
-    "reader",
     "Column",
     "BondType",
     "OperationType",
@@ -40,4 +48,7 @@ __all__ = [
     "TradedLast12Months",
 ]
 
-__version__ = "1.1.2"
+if _HAS_ANALYSIS:
+    __all__.extend(["plot", "reader"])
+
+__version__ = "2.0.0"

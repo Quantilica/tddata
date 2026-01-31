@@ -18,7 +18,7 @@ import argparse
 import asyncio
 from pathlib import Path
 
-from . import converter, downloader
+from . import downloader
 from .constants import (
     DATASET_BUYBACKS,
     DATASET_INVESTORS,
@@ -60,29 +60,34 @@ def set_parser():
         help="Dataset to download",
     )
 
-    # Convert command
-    convert_parser = subparsers.add_parser("convert", help="Convert CSV to Parquet")
-    convert_parser.add_argument(
-        "file",
-        type=Path,
-        help="Path to CSV file to convert",
-    )
-    convert_parser.add_argument(
-        "--type",
-        dest="dataset_type",
-        default="infer",
-        choices=[
-            "prices",
-            "operations",
-            "investors",
-            "stock",
-            "buybacks",
-            "sales",
-            "maturities",
-            "infer",
-        ],
-        help="Dataset type (default: infer from filename)",
-    )
+    # Convert command (only available with analysis extras)
+    try:
+        from . import converter  # noqa: F401
+
+        convert_parser = subparsers.add_parser("convert", help="Convert CSV to Parquet")
+        convert_parser.add_argument(
+            "file",
+            type=Path,
+            help="Path to CSV file to convert",
+        )
+        convert_parser.add_argument(
+            "--type",
+            dest="dataset_type",
+            default="infer",
+            choices=[
+                "prices",
+                "operations",
+                "investors",
+                "stock",
+                "buybacks",
+                "sales",
+                "maturities",
+                "infer",
+            ],
+            help="Dataset type (default: infer from filename)",
+        )
+    except ImportError:
+        pass  # Convert command not available without analysis extras
 
     return parser
 
@@ -119,6 +124,13 @@ def main():
             print("\nDownload cancelled.")
 
     elif args.command == "convert":
+        try:
+            from . import converter
+        except ImportError:
+            print("Error: Convert feature requires analysis extras.")
+            print("Install with: pip install tddata[analysis]")
+            return
+
         try:
             output_path = converter.convert_to_parquet(
                 args.file, dataset_type=args.dataset_type

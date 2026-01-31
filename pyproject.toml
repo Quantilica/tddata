@@ -1,6 +1,6 @@
 [project]
 name = "tddata"
-version = "1.1.2"
+version = "2.0.0"
 authors = [
   { name="Komesu, D.K.", email="daniel@dkko.me" },
 ]
@@ -21,10 +21,14 @@ classifiers = [
 ]
 dependencies = [
     "httpx>=0.28.1",
+    "tqdm>=4.67.1",
+]
+
+[project.optional-dependencies]
+analysis = [
     "pandas>=2.3.3",
     "pyarrow>=22.0.0",
     "seaborn>=0.13.2",
-    "tqdm>=4.67.1",
 ]
 
 [project.scripts]
