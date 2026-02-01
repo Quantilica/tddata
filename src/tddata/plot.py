@@ -40,7 +40,7 @@ def plot_decorator(title: str = "", xlabel: str = "", ylabel: str = ""):
             _add_footer(f)
             sns.despine(ax=ax)
             f.tight_layout()
-            return f
+            return f, ax
 
         return wrapper
 
