@@ -1,6 +1,7 @@
 # tddata - Download, Analyze & Plot Brazilian Tesouro Direto's Data (CKAN API)
 
 ![GitHub](https://img.shields.io/github/license/dankkom/tddata?style=flat-square)
+[![Tests](https://github.com/dankkom/tddata/actions/workflows/run-tests.yml/badge.svg)](https://github.com/dankkom/tddata/actions/workflows/run-tests.yml)
 
 **tddata** is a powerful Python package designed to simplify the process of downloading, reading, and visualizing historical data from Brazil's Tesouro Direto program. It leverages the official CKAN API (Tesouro Transparente) to fetch the most up-to-date datasets.
 
