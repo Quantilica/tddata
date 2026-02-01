@@ -1,4 +1,4 @@
-# Copyright (C) 2020-2025 Daniel Kiyoyudi Komesu
+# Copyright (C) 2020-2026 Daniel Kiyoyudi Komesu
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -99,11 +99,15 @@ class TestPlot(unittest.TestCase):
         plt.close("all")
 
     def test_plot_stock(self):
-        fig = plot.plot_stock(self.stock_data)
-        self.assertIsInstance(fig, plt.Figure)
+        result = plot.plot_stock(self.stock_data)
+        self.assertIsInstance(result, tuple)
+        self.assertIsInstance(result[0], plt.Figure)
+        self.assertIsInstance(result[1], plt.Axes)
 
-        fig = plot.plot_stock(self.stock_data, by_bond_type=False)
-        self.assertIsInstance(fig, plt.Figure)
+        result = plot.plot_stock(self.stock_data, by_bond_type=False)
+        self.assertIsInstance(result, tuple)
+        self.assertIsInstance(result[0], plt.Figure)
+        self.assertIsInstance(result[1], plt.Axes)
 
     def test_plot_investors_demographics(self):
         fig = plot.plot_investors_demographics(
@@ -126,32 +130,46 @@ class TestPlot(unittest.TestCase):
         self.assertIsInstance(fig, plt.Figure)
 
     def test_plot_investors_evolution(self):
-        fig = plot.plot_investors_evolution(self.investors_data)
-        self.assertIsInstance(fig, plt.Figure)
+        result = plot.plot_investors_evolution(self.investors_data)
+        self.assertIsInstance(result, tuple)
+        self.assertIsInstance(result[0], plt.Figure)
+        self.assertIsInstance(result[1], plt.Axes)
 
     def test_plot_operations(self):
-        fig = plot.plot_operations(self.operations_data)
-        self.assertIsInstance(fig, plt.Figure)
+        result = plot.plot_operations(self.operations_data)
+        self.assertIsInstance(result, tuple)
+        self.assertIsInstance(result[0], plt.Figure)
+        self.assertIsInstance(result[1], plt.Axes)
 
-        fig = plot.plot_operations(self.operations_data, by_type=False)
-        self.assertIsInstance(fig, plt.Figure)
+        result = plot.plot_operations(self.operations_data, by_type=False)
+        self.assertIsInstance(result, tuple)
+        self.assertIsInstance(result[0], plt.Figure)
+        self.assertIsInstance(result[1], plt.Axes)
 
     def test_plot_sales(self):
-        fig = plot.plot_sales(self.sales_data)
-        self.assertIsInstance(fig, plt.Figure)
+        result = plot.plot_sales(self.sales_data)
+        self.assertIsInstance(result, tuple)
+        self.assertIsInstance(result[0], plt.Figure)
+        self.assertIsInstance(result[1], plt.Axes)
 
     def test_plot_buybacks(self):
-        fig = plot.plot_buybacks(self.buybacks_data)
-        self.assertIsInstance(fig, plt.Figure)
+        result = plot.plot_buybacks(self.buybacks_data)
+        self.assertIsInstance(result, tuple)
+        self.assertIsInstance(result[0], plt.Figure)
+        self.assertIsInstance(result[1], plt.Axes)
 
     def test_plot_maturities(self):
-        fig = plot.plot_maturities(self.maturities_data)
-        self.assertIsInstance(fig, plt.Figure)
+        result = plot.plot_maturities(self.maturities_data)
+        self.assertIsInstance(result, tuple)
+        self.assertIsInstance(result[0], plt.Figure)
+        self.assertIsInstance(result[1], plt.Axes)
 
     def test_plot_interest_coupons(self):
         # Interest coupons uses same structure as maturities
-        fig = plot.plot_interest_coupons(self.maturities_data)
-        self.assertIsInstance(fig, plt.Figure)
+        result = plot.plot_interest_coupons(self.maturities_data)
+        self.assertIsInstance(result, tuple)
+        self.assertIsInstance(result[0], plt.Figure)
+        self.assertIsInstance(result[1], plt.Axes)
 
     def test_plot_prices(self):
         fig = plot.plot_prices(self.prices_data, "Type A", Column.BUY_PRICE.value)
