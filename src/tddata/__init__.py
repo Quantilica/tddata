@@ -1,4 +1,4 @@
-# Copyright (C) 2020-2025 Daniel Kiyoyudi Komesu
+# Copyright (C) 2020-2026 Daniel Kiyoyudi Komesu
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -51,4 +51,4 @@ __all__ = [
 if _HAS_ANALYSIS:
     __all__.extend(["plot", "reader"])
 
-__version__ = "2.0.0"
+__version__ = "2.0.1"
