@@ -1,4 +1,4 @@
-# Copyright (C) 2020-2025 Daniel Kiyoyudi Komesu
+# Copyright (C) 2020-2026 Daniel Kiyoyudi Komesu
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -30,6 +30,18 @@ def aggregate_stock(data: pd.DataFrame, by_bond_type: bool = True) -> pd.DataFra
     if by_bond_type:
         return data.groupby([C.STOCK_MONTH.value, C.BOND_TYPE.value])[C.STOCK_VALUE.value].sum().reset_index()
     return data.groupby([C.STOCK_MONTH.value])[C.STOCK_VALUE.value].sum().reset_index()
+
+
+def prepare_prices(data: pd.DataFrame, bond_type: str) -> pd.DataFrame:
+    """Filter and sort prices data for plotting."""
+    cond_a = data[C.BOND_TYPE.value] == bond_type  # Filter by bond type
+    cond_b = data[C.BUY_PRICE.value] > 0  # Filter out rows with zero prices
+    cond_c = data[C.SELL_PRICE.value] > 0  # Filter out rows with zero prices
+    subset = data[cond_a & cond_b & cond_c]
+    # Sort the data by maturity date
+    subset = subset.sort_values(by=[C.MATURITY_DATE.value, C.REFERENCE_DATE.value])
+    return subset
+
 
 
 def prepare_demographics_counts(

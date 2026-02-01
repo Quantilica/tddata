@@ -1,4 +1,4 @@
-# Copyright (C) 2020-2025 Daniel Kiyoyudi Komesu
+# Copyright (C) 2020-2026 Daniel Kiyoyudi Komesu
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -14,6 +14,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
+import functools
 import textwrap
 from typing import Optional
 
@@ -25,6 +26,25 @@ import seaborn as sns
 from . import analytics
 from .constants import Column as C
 from .constants import Gender
+
+
+def plot_decorator(title: str = "", xlabel: str = "", ylabel: str = ""):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            f, ax = func(*args, **kwargs)
+            ax.set_title(title)
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(ylabel)
+            ax.yaxis.set_major_formatter(ticker.FuncFormatter(human_format))
+            _add_footer(f)
+            sns.despine(ax=ax)
+            f.tight_layout()
+            return f
+
+        return wrapper
+
+    return decorator
 
 
 def human_format(num, pos):
@@ -44,13 +64,7 @@ def human_format(num, pos):
 
 
 def plot_prices(data: pd.DataFrame, bond_type: str, variable: str):
-    # To avoid long code lines we create conditions separately
-    cond_a = data[C.BOND_TYPE.value] == bond_type  # Filter by bond type
-    cond_b = data[C.BUY_PRICE.value] > 0  # Filter out rows with zero prices
-    cond_c = data[C.SELL_PRICE.value] > 0  # Filter out rows with zero prices
-    subset = data[cond_a & cond_b & cond_c]
-    # Sort the data by maturity date
-    subset = subset.sort_values(by=[C.MATURITY_DATE.value, C.REFERENCE_DATE.value])
+    subset = analytics.prepare_prices(data, bond_type)
     variable_description = ""
     if variable == C.BUY_YIELD.value:
         variable_description = "Buy Yield (%)"
@@ -118,6 +132,11 @@ def plot_prices(data: pd.DataFrame, bond_type: str, variable: str):
     return f
 
 
+@plot_decorator(
+    title="Tesouro Direto Stock Value Evolution",
+    xlabel="Date",
+    ylabel="Stock Value (R$)",
+)
 def plot_stock(data: pd.DataFrame, by_bond_type: bool = True):
     """Plot the evolution of the Stock Value."""
     f, ax = plt.subplots(figsize=(10, 6))
@@ -140,15 +159,7 @@ def plot_stock(data: pd.DataFrame, by_bond_type: bool = True):
             y=C.STOCK_VALUE.value,
             ax=ax,
         )
-
-    ax.set_title("Tesouro Direto Stock Value Evolution")
-    ax.set_ylabel("Stock Value (R$)")
-    ax.set_xlabel("Date")
-    ax.yaxis.set_major_formatter(ticker.FuncFormatter(human_format))
-    _add_footer(f)
-    sns.despine(ax=ax)
-    f.tight_layout()
-    return f
+    return f, ax
 
 
 def plot_investors_demographics(
@@ -277,9 +288,7 @@ def plot_investors_population_pyramid(data: pd.DataFrame):
     ax.set_title("Investors Population Pyramid by Age and Gender")
 
     # Format x-axis to show absolute values
-    ax.xaxis.set_major_formatter(
-        ticker.FuncFormatter(lambda x, pos: human_format(abs(x), pos))
-    )
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: human_format(abs(x), pos)))
 
     # Add vertical line at zero
     ax.axvline(0, color="black", linewidth=0.8)
@@ -295,6 +304,11 @@ def plot_investors_population_pyramid(data: pd.DataFrame):
     return f
 
 
+@plot_decorator(
+    title="New Investors Over Time",
+    xlabel="Date",
+    ylabel="Number of New Investors",
+)
 def plot_investors_evolution(data: pd.DataFrame, freq: str = "ME"):
     """Plot the number of new investors over time."""
     f, ax = plt.subplots(figsize=(10, 6))
@@ -302,17 +316,14 @@ def plot_investors_evolution(data: pd.DataFrame, freq: str = "ME"):
     resampled = analytics.aggregate_new_investors(data, freq)
 
     sns.lineplot(data=resampled, x=C.JOIN_DATE.value, y="new_investors", ax=ax)
-
-    ax.set_title("New Investors Over Time")
-    ax.set_ylabel("Number of New Investors")
-    ax.set_xlabel("Date")
-    ax.yaxis.set_major_formatter(ticker.FuncFormatter(human_format))
-    _add_footer(f)
-    sns.despine(ax=ax)
-    f.tight_layout()
-    return f
+    return f, ax
 
 
+@plot_decorator(
+    title="Operations Volume Over Time",
+    xlabel="Date",
+    ylabel="Total Value (R$)",
+)
 def plot_operations(data: pd.DataFrame, by_type: bool = True):
     """Plot operations value over time."""
     f, ax = plt.subplots(figsize=(10, 6))
@@ -330,15 +341,7 @@ def plot_operations(data: pd.DataFrame, by_type: bool = True):
         ax.legend(title="Operation Type")
     else:
         sns.lineplot(data=grouped, x="month", y=C.OPERATION_VALUE.value, ax=ax)
-
-    ax.set_title("Operations Volume Over Time")
-    ax.set_ylabel("Total Value (R$)")
-    ax.set_xlabel("Date")
-    ax.yaxis.set_major_formatter(ticker.FuncFormatter(human_format))
-    _add_footer(f)
-    sns.despine(ax=ax)
-    f.tight_layout()
-    return f
+    return f, ax
 
 
 def plot_sales(data: pd.DataFrame, by_bond_type: bool = True):
@@ -389,6 +392,7 @@ def plot_interest_coupons(data: pd.DataFrame, by_bond_type: bool = True):
     )
 
 
+@plot_decorator()
 def _plot_value_over_time(
     data: pd.DataFrame,
     date_col: str,
@@ -410,14 +414,7 @@ def _plot_value_over_time(
     else:
         sns.lineplot(data=grouped, x="month", y=value_col, ax=ax)
 
-    ax.set_title(title)
-    ax.set_ylabel("Value (R$)")
-    ax.set_xlabel("Date")
-    ax.yaxis.set_major_formatter(ticker.FuncFormatter(human_format))
-    _add_footer(f)
-    sns.despine(ax=ax)
-    f.tight_layout()
-    return f
+    return f, ax
 
 
 def _add_footer(fig):

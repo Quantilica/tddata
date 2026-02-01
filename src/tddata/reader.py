@@ -1,4 +1,4 @@
-# Copyright (C) 2020-2025 Daniel Kiyoyudi Komesu
+# Copyright (C) 2020-2026 Daniel Kiyoyudi Komesu
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@ defined in the `Column` enum.
 """
 
 from pathlib import Path
-from typing import Iterator, Optional, Union
+from typing import Callable, Dict, Iterator, List, Optional, Union
 
 import pandas as pd
 
@@ -40,402 +40,228 @@ from .constants import (
 from .constants import Column as C
 
 
-def read_prices(
-    filepath: Path, chunksize: Optional[int] = None
+def _read_and_process_csv(
+    filepath: Path,
+    column_mapping: Dict[str, str],
+    date_columns: Optional[List[str]] = None,
+    dtype_mapping: Optional[Dict[str, str]] = None,
+    post_process_func: Optional[Callable[[pd.DataFrame], pd.DataFrame]] = None,
+    chunksize: Optional[int] = None,
 ) -> Union[pd.DataFrame, Iterator[pd.DataFrame]]:
-    """Read bond prices and rates (Taxas e Preços dos Títulos).
-
-    Parses the daily prices and yields for government bonds.
-
-    Args:
-        filepath: Path to the CSV file.
-        chunksize: Number of lines to read from the CSV file at a time.
-
-    Returns:
-        pd.DataFrame or Iterator[pd.DataFrame]: DataFrame with columns:
-            - reference_date: Date of the record
-            - bond_type: Name of the bond (e.g., Tesouro Selic)
-            - maturity_date: Maturity date of the bond
-            - buy_yield: Yield for buying
-            - sell_yield: Yield for selling
-            - buy_price: Price for buying
-            - sell_price: Price for selling
-            - base_price: Base price
-    """
+    """Generic function to read and process a CSV file."""
     data = pd.read_csv(
         filepath,
         sep=";",
         decimal=",",
-        parse_dates=["Data Vencimento", "Data Base"],
+        parse_dates=date_columns,
         dayfirst=True,
         chunksize=chunksize,
     )
 
     def _process(df: pd.DataFrame) -> pd.DataFrame:
-        df = df.rename(
-            columns={
-                "Data Base": C.REFERENCE_DATE.value,
-                "Tipo Titulo": C.BOND_TYPE.value,
-                "Data Vencimento": C.MATURITY_DATE.value,
-                "Taxa Compra Manha": C.BUY_YIELD.value,
-                "Taxa Venda Manha": C.SELL_YIELD.value,
-                "PU Compra Manha": C.BUY_PRICE.value,
-                "PU Venda Manha": C.SELL_PRICE.value,
-                "PU Base Manha": C.BASE_PRICE.value,
-            }
-        )
-        df[C.BOND_TYPE.value] = df[C.BOND_TYPE.value].apply(normalize_bond_type)
+        df = df.rename(columns=column_mapping)
+        if C.BOND_TYPE.value in df.columns:
+            df[C.BOND_TYPE.value] = df[C.BOND_TYPE.value].apply(normalize_bond_type)
+        if dtype_mapping:
+            df = df.astype(dtype_mapping)
+        if post_process_func:
+            df = post_process_func(df)
         return df
 
     if chunksize is None:
         return _process(data)
     return (_process(chunk) for chunk in data)
+
+
+def read_prices(
+    filepath: Path, chunksize: Optional[int] = None
+) -> Union[pd.DataFrame, Iterator[pd.DataFrame]]:
+    """Read bond prices and rates (Taxas e Preços dos Títulos)."""
+    column_mapping = {
+        "Data Base": C.REFERENCE_DATE.value,
+        "Tipo Titulo": C.BOND_TYPE.value,
+        "Data Vencimento": C.MATURITY_DATE.value,
+        "Taxa Compra Manha": C.BUY_YIELD.value,
+        "Taxa Venda Manha": C.SELL_YIELD.value,
+        "PU Compra Manha": C.BUY_PRICE.value,
+        "PU Venda Manha": C.SELL_PRICE.value,
+        "PU Base Manha": C.BASE_PRICE.value,
+    }
+    return _read_and_process_csv(
+        filepath,
+        column_mapping,
+        date_columns=["Data Vencimento", "Data Base"],
+        chunksize=chunksize,
+    )
+
 
 
 def read_stock(
     filepath: Path, chunksize: Optional[int] = None
 ) -> Union[pd.DataFrame, Iterator[pd.DataFrame]]:
-    """Read bond stock (Estoque).
+    """Read bond stock (Estoque)."""
+    column_mapping = {
+        "Tipo Titulo": C.BOND_TYPE.value,
+        "Vencimento do Titulo": C.MATURITY_DATE.value,
+        "Mes Estoque": C.STOCK_MONTH.value,
+        "PU": C.UNIT_PRICE.value,
+        "Quantidade": C.QUANTITY.value,
+        "Valor Estoque": C.STOCK_VALUE.value,
+    }
 
-    Parses the monthly stock of government bonds.
-
-    Args:
-        filepath: Path to the CSV file.
-        chunksize: Number of lines to read from the CSV file at a time.
-
-    Returns:
-        pd.DataFrame or Iterator[pd.DataFrame]: DataFrame with columns:
-            - bond_type: Name of the bond
-            - maturity_date: Maturity date of the bond
-            - stock_month: Month of the stock record
-            - unit_price: Unit price of the bond
-            - quantity: Quantity of bonds in stock
-            - stock_value: Total value of the stock
-    """
-    # 'Mes Estoque' is in format %m/%Y (e.g. 11/2021)
-    # 'Vencimento do Titulo' is in format %d/%m/%Y
-    # It's better to read as strings first and convert manually to avoid warnings/ambiguities
-    data = pd.read_csv(
-        filepath,
-        sep=";",
-        decimal=",",
-        chunksize=chunksize,
-    )
-
-    def _process(df: pd.DataFrame) -> pd.DataFrame:
-        df["Vencimento do Titulo"] = pd.to_datetime(
-            df["Vencimento do Titulo"], dayfirst=True
+    def post_process(df: pd.DataFrame) -> pd.DataFrame:
+        df[C.MATURITY_DATE.value] = pd.to_datetime(
+            df[C.MATURITY_DATE.value], dayfirst=True
         )
-        df["Mes Estoque"] = pd.to_datetime(df["Mes Estoque"], format="%m/%Y")
-        df = df.rename(
-            columns={
-                "Tipo Titulo": C.BOND_TYPE.value,
-                "Vencimento do Titulo": C.MATURITY_DATE.value,
-                "Mes Estoque": C.STOCK_MONTH.value,
-                "PU": C.UNIT_PRICE.value,
-                "Quantidade": C.QUANTITY.value,
-                "Valor Estoque": C.STOCK_VALUE.value,
-            }
-        )
-        df[C.BOND_TYPE.value] = df[C.BOND_TYPE.value].apply(normalize_bond_type)
+        df[C.STOCK_MONTH.value] = pd.to_datetime(df[C.STOCK_MONTH.value], format="%m/%Y")
         return df
 
-    if chunksize is None:
-        return _process(data)
-    return (_process(chunk) for chunk in data)
+    return _read_and_process_csv(
+        filepath,
+        column_mapping,
+        post_process_func=post_process,
+        chunksize=chunksize,
+    )
 
 
 def read_investors(
     filepath: Path, chunksize: Optional[int] = None
 ) -> Union[pd.DataFrame, Iterator[pd.DataFrame]]:
-    """Read investors data (Investidores).
+    """Read investors data (Investidores)."""
+    column_mapping = {
+        "Codigo do Investidor": C.INVESTOR_ID.value,
+        "Data de Adesao": C.JOIN_DATE.value,
+        "Estado Civil": C.MARITAL_STATUS.value,
+        "Genero": C.GENDER.value,
+        "Profissao": C.PROFESSION.value,
+        "Idade": C.AGE.value,
+        "UF do Investidor": C.STATE.value,
+        "Cidade do Investidor": C.CITY.value,
+        "Pais do Investidor": C.COUNTRY.value,
+        "Situacao da Conta": C.ACCOUNT_STATUS.value,
+        "Operou 12 Meses": C.TRADED_LAST_12_MONTHS.value,
+    }
+    dtype_mapping = {
+        C.MARITAL_STATUS.value: "category",
+        C.PROFESSION.value: "category",
+        C.STATE.value: "category",
+        C.CITY.value: "category",
+        C.COUNTRY.value: "category",
+    }
 
-    Parses the list of investors registered in Tesouro Direto.
-
-    Args:
-        filepath: Path to the CSV file.
-        chunksize: Number of lines to read from the CSV file at a time.
-
-    Returns:
-        pd.DataFrame or Iterator[pd.DataFrame]: DataFrame with columns:
-            - investor_id: Unique identifier for the investor
-            - join_date: Date the investor joined
-            - marital_status: Marital status
-            - gender: Gender (mapped to standardized values)
-            - profession: Profession
-            - age: Age
-            - state: State (UF)
-            - city: City
-            - country: Country
-            - account_status: Account status (Active/Deactivated)
-            - traded_last_12_months: Whether traded in last 12 months
-    """
-    data = pd.read_csv(
-        filepath,
-        sep=";",
-        parse_dates=["Data de Adesao"],
-        dayfirst=True,
-        chunksize=chunksize,
-    )
-
-    def _process(df: pd.DataFrame) -> pd.DataFrame:
-        df = df.rename(
-            columns={
-                "Codigo do Investidor": C.INVESTOR_ID.value,
-                "Data de Adesao": C.JOIN_DATE.value,
-                "Estado Civil": C.MARITAL_STATUS.value,
-                "Genero": C.GENDER.value,
-                "Profissao": C.PROFESSION.value,
-                "Idade": C.AGE.value,
-                "UF do Investidor": C.STATE.value,
-                "Cidade do Investidor": C.CITY.value,
-                "Pais do Investidor": C.COUNTRY.value,
-                "Situacao da Conta": C.ACCOUNT_STATUS.value,
-                "Operou 12 Meses": C.TRADED_LAST_12_MONTHS.value,
-            }
-        )
-
-        # Convert object columns to categorical dtype for efficiency
-        df[C.MARITAL_STATUS.value] = df[C.MARITAL_STATUS.value].astype("category")
-        df[C.PROFESSION.value] = df[C.PROFESSION.value].astype("category")
-        df[C.STATE.value] = df[C.STATE.value].astype("category")
-        df[C.CITY.value] = df[C.CITY.value].astype("category")
-        df[C.COUNTRY.value] = df[C.COUNTRY.value].astype("category")
-
-        # Map categorical values to enum values for better semantics
-        # Keep original values for MaritalStatus as they're already descriptive
-
-        # Map gender codes to enum values
+    def post_process(df: pd.DataFrame) -> pd.DataFrame:
         gender_map = {e.value: e.value for e in Gender}
-        df[C.GENDER.value] = df[C.GENDER.value].map(gender_map)
-        # Convert to categorical dtype for efficiency
-        df[C.GENDER.value] = df[C.GENDER.value].astype("category")
-
-        # Map account status codes to enum values
+        df[C.GENDER.value] = df[C.GENDER.value].map(gender_map).astype("category")
         status_map = {e.value: e.value for e in AccountStatus}
-        df[C.ACCOUNT_STATUS.value] = df[C.ACCOUNT_STATUS.value].map(status_map)
-        # Convert to categorical dtype for efficiency
-        df[C.ACCOUNT_STATUS.value] = df[C.ACCOUNT_STATUS.value].astype("category")
-
-        # Map traded last 12 months codes to enum values
+        df[C.ACCOUNT_STATUS.value] = (
+            df[C.ACCOUNT_STATUS.value].map(status_map).astype("category")
+        )
         traded_map = {e.value: e.value for e in TradedLast12Months}
-        df[C.TRADED_LAST_12_MONTHS.value] = df[C.TRADED_LAST_12_MONTHS.value].map(traded_map)
-        # Convert to categorical dtype for efficiency
-        df[C.TRADED_LAST_12_MONTHS.value] = df[C.TRADED_LAST_12_MONTHS.value].astype("category")
+        df[C.TRADED_LAST_12_MONTHS.value] = (
+            df[C.TRADED_LAST_12_MONTHS.value].map(traded_map).astype("category")
+        )
         return df
 
-    if chunksize is None:
-        return _process(data)
-    return (_process(chunk) for chunk in data)
+    return _read_and_process_csv(
+        filepath,
+        column_mapping,
+        date_columns=["Data de Adesao"],
+        dtype_mapping=dtype_mapping,
+        post_process_func=post_process,
+        chunksize=chunksize,
+    )
 
 
 def read_operations(
     filepath: Path, chunksize: Optional[int] = None
 ) -> Union[pd.DataFrame, Iterator[pd.DataFrame]]:
-    """Read operations data (Operações).
+    """Read operations data (Operações)."""
+    column_mapping = {
+        "Codigo do Investidor": C.INVESTOR_ID.value,
+        "Data da Operacao": C.OPERATION_DATE.value,
+        "Tipo Titulo": C.BOND_TYPE.value,
+        "Vencimento do Titulo": C.MATURITY_DATE.value,
+        "Quantidade": C.QUANTITY.value,
+        "Valor do Titulo": C.BOND_VALUE.value,
+        "Valor da Operacao": C.OPERATION_VALUE.value,
+        "Tipo da Operacao": C.OPERATION_TYPE.value,
+        "Canal da Operacao": C.CHANNEL.value,
+    }
 
-    Parses the history of buy/sell/custody operations.
-
-    Args:
-        filepath: Path to the CSV file.
-        chunksize: Number of lines to read from the CSV file at a time.
-
-    Returns:
-        pd.DataFrame or Iterator[pd.DataFrame]: DataFrame with columns:
-            - investor_id: Investor ID
-            - operation_date: Date of the operation
-            - bond_type: Bond type
-            - maturity_date: Maturity date
-            - quantity: Quantity traded
-            - bond_value: Unit value of the bond
-            - operation_value: Total value of the operation
-            - operation_type: Type (Buy, Sell, etc.)
-            - channel: Channel used (Site, Homebroker)
-    """
-    data = pd.read_csv(
-        filepath,
-        sep=";",
-        decimal=",",
-        parse_dates=["Data da Operacao", "Vencimento do Titulo"],
-        dayfirst=True,
-        chunksize=chunksize,
-    )
-
-    def _process(df: pd.DataFrame) -> pd.DataFrame:
-        df = df.rename(
-            columns={
-                "Codigo do Investidor": C.INVESTOR_ID.value,
-                "Data da Operacao": C.OPERATION_DATE.value,
-                "Tipo Titulo": C.BOND_TYPE.value,
-                "Vencimento do Titulo": C.MATURITY_DATE.value,
-                "Quantidade": C.QUANTITY.value,
-                "Valor do Titulo": C.BOND_VALUE.value,
-                "Valor da Operacao": C.OPERATION_VALUE.value,
-                "Tipo da Operacao": C.OPERATION_TYPE.value,
-                "Canal da Operacao": C.CHANNEL.value,
-            }
-        )
-
-        # Convert datetime columns to appropriate dtypes
+    def post_process(df: pd.DataFrame) -> pd.DataFrame:
         df[C.OPERATION_DATE.value] = pd.to_datetime(df[C.OPERATION_DATE.value])
         df[C.MATURITY_DATE.value] = pd.to_datetime(df[C.MATURITY_DATE.value])
-
-        # Map channel codes to enum values
         channel_map = {e.value: e.value for e in Channel}
-        df[C.CHANNEL.value] = df[C.CHANNEL.value].map(channel_map)
-        # Convert to categorical dtype for efficiency
-        df[C.CHANNEL.value] = df[C.CHANNEL.value].astype("category")
-
-        df[C.BOND_TYPE.value] = df[C.BOND_TYPE.value].apply(normalize_bond_type)
-        # Convert to categorical dtype for efficiency
+        df[C.CHANNEL.value] = df[C.CHANNEL.value].map(channel_map).astype("category")
         df[C.BOND_TYPE.value] = df[C.BOND_TYPE.value].astype("category")
         return df
 
-    if chunksize is None:
-        return _process(data)
-    return (_process(chunk) for chunk in data)
+    return _read_and_process_csv(
+        filepath,
+        column_mapping,
+        date_columns=["Data da Operacao", "Vencimento do Titulo"],
+        post_process_func=post_process,
+        chunksize=chunksize,
+    )
 
 
 def read_sales(
     filepath: Path, chunksize: Optional[int] = None
 ) -> Union[pd.DataFrame, Iterator[pd.DataFrame]]:
-    """Read sales data (Vendas).
-
-    Parses the history of bond sales (investments).
-
-    Args:
-        filepath: Path to the CSV file.
-        chunksize: Number of lines to read from the CSV file at a time.
-
-    Returns:
-        pd.DataFrame or Iterator[pd.DataFrame]: DataFrame with columns:
-            - bond_type: Bond type
-            - maturity_date: Maturity date
-            - sale_date: Date of the sale
-            - unit_price: Unit price
-            - quantity: Quantity sold
-            - value: Total value
-    """
-    data = pd.read_csv(
+    """Read sales data (Vendas)."""
+    column_mapping = {
+        "Tipo Titulo": C.BOND_TYPE.value,
+        "Vencimento do Titulo": C.MATURITY_DATE.value,
+        "Data Venda": C.SALE_DATE.value,
+        "PU": C.UNIT_PRICE.value,
+        "Quantidade": C.QUANTITY.value,
+        "Valor": C.VALUE.value,
+    }
+    return _read_and_process_csv(
         filepath,
-        sep=";",
-        decimal=",",
-        parse_dates=["Vencimento do Titulo", "Data Venda"],
-        dayfirst=True,
+        column_mapping,
+        date_columns=["Vencimento do Titulo", "Data Venda"],
         chunksize=chunksize,
     )
-
-    def _process(df: pd.DataFrame) -> pd.DataFrame:
-        df = df.rename(
-            columns={
-                "Tipo Titulo": C.BOND_TYPE.value,
-                "Vencimento do Titulo": C.MATURITY_DATE.value,
-                "Data Venda": C.SALE_DATE.value,
-                "PU": C.UNIT_PRICE.value,
-                "Quantidade": C.QUANTITY.value,
-                "Valor": C.VALUE.value,
-            }
-        )
-        df[C.BOND_TYPE.value] = df[C.BOND_TYPE.value].apply(normalize_bond_type)
-        return df
-
-    if chunksize is None:
-        return _process(data)
-    return (_process(chunk) for chunk in data)
 
 
 def read_buybacks(
     filepath: Path, chunksize: Optional[int] = None
 ) -> Union[pd.DataFrame, Iterator[pd.DataFrame]]:
-    """Read buybacks data (Resgates).
-
-    Parses the history of bond buybacks/redemptions.
-
-    Args:
-        filepath: Path to the CSV file.
-        chunksize: Number of lines to read from the CSV file at a time.
-
-    Returns:
-        pd.DataFrame or Iterator[pd.DataFrame]: DataFrame with columns:
-            - bond_type: Bond type
-            - maturity_date: Maturity date
-            - buyback_date: Date of the buyback
-            - quantity: Quantity redeemed
-            - value: Total value
-    """
-    data = pd.read_csv(
+    """Read buybacks data (Resgates)."""
+    column_mapping = {
+        "Tipo Titulo": C.BOND_TYPE.value,
+        "Vencimento do Titulo": C.MATURITY_DATE.value,
+        "Data Resgate": C.BUYBACK_DATE.value,
+        "Quantidade": C.QUANTITY.value,
+        "Valor": C.VALUE.value,
+    }
+    return _read_and_process_csv(
         filepath,
-        sep=";",
-        decimal=",",
-        parse_dates=["Vencimento do Titulo", "Data Resgate"],
-        dayfirst=True,
+        column_mapping,
+        date_columns=["Vencimento do Titulo", "Data Resgate"],
         chunksize=chunksize,
     )
-
-    def _process(df: pd.DataFrame) -> pd.DataFrame:
-        df = df.rename(
-            columns={
-                "Tipo Titulo": C.BOND_TYPE.value,
-                "Vencimento do Titulo": C.MATURITY_DATE.value,
-                "Data Resgate": C.BUYBACK_DATE.value,
-                "Quantidade": C.QUANTITY.value,
-                "Valor": C.VALUE.value,
-            }
-        )
-        df[C.BOND_TYPE.value] = df[C.BOND_TYPE.value].apply(normalize_bond_type)
-        return df
-
-    if chunksize is None:
-        return _process(data)
-    return (_process(chunk) for chunk in data)
 
 
 def read_maturities(
     filepath: Path, chunksize: Optional[int] = None
 ) -> Union[pd.DataFrame, Iterator[pd.DataFrame]]:
-    """Read maturities data (Vencimentos).
-
-    Parses the history of bond maturities.
-
-    Args:
-        filepath: Path to the CSV file.
-        chunksize: Number of lines to read from the CSV file at a time.
-
-    Returns:
-        pd.DataFrame or Iterator[pd.DataFrame]: DataFrame with columns:
-            - bond_type: Bond type
-            - maturity_date: Maturity date
-            - buyback_date: Date of the maturity/redemption
-            - unit_price: Unit price
-            - quantity: Quantity matured
-            - value: Total value
-    """
-    data = pd.read_csv(
+    """Read maturities data (Vencimentos)."""
+    column_mapping = {
+        "Tipo Titulo": C.BOND_TYPE.value,
+        "Vencimento do Titulo": C.MATURITY_DATE.value,
+        "Data Resgate": C.BUYBACK_DATE.value,
+        "PU": C.UNIT_PRICE.value,
+        "Quantidade": C.QUANTITY.value,
+        "Valor": C.VALUE.value,
+    }
+    return _read_and_process_csv(
         filepath,
-        sep=";",
-        decimal=",",
-        parse_dates=["Vencimento do Titulo", "Data Resgate"],
-        dayfirst=True,
+        column_mapping,
+        date_columns=["Vencimento do Titulo", "Data Resgate"],
         chunksize=chunksize,
     )
-
-    def _process(df: pd.DataFrame) -> pd.DataFrame:
-        df = df.rename(
-            columns={
-                "Tipo Titulo": C.BOND_TYPE.value,
-                "Vencimento do Titulo": C.MATURITY_DATE.value,
-                "Data Resgate": C.BUYBACK_DATE.value,
-                "PU": C.UNIT_PRICE.value,
-                "Quantidade": C.QUANTITY.value,
-                "Valor": C.VALUE.value,
-            }
-        )
-        df[C.BOND_TYPE.value] = df[C.BOND_TYPE.value].apply(normalize_bond_type)
-        return df
-
-    if chunksize is None:
-        return _process(data)
-    return (_process(chunk) for chunk in data)
 
 
 def read_interest_coupons(
