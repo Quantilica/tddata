@@ -33,28 +33,7 @@ The minimal installation includes only `httpx` and `tqdm` for downloading data. 
 
 ### 2.1 The `tddata` CLI
 
-The package includes a Command-Line Interface (CLI) to download datasets quickly.
-
-**Syntax:**
-
-```bash
-tddata [DATASET_ID] [-o OUTPUT_DIR]
-```
-
-**Examples:**
-
-```bash
-# Download prices/rates
-tddata prices -o ./data
-
-# Download stock (estoque) data
-tddata stock -o ./data
-
-# Download investors data
-tddata investors -o ./data
-```
-
-Available datasets: `prices`, `stock`, `investors`, `operations`, `sales`, `buybacks`, `maturities`.
+The package includes a comprehensive Command-Line Interface (CLI) for downloading, inspecting, and converting Tesouro Direto data. See [CLI.md](docs/CLI.md) for complete documentation including all commands, options, and examples.
 
 ### 2.2 The `tddata` Python Package
 
@@ -144,7 +123,7 @@ fig4.show()
 
 ![Investor Demographics by Profession](./plots/investors_demographics_profession.png)
 
-See more visualizations in the [PLOTS.md](./PLOTS.md) file.
+See more visualizations in the [PLOTS.md](docs/PLOTS.md) file.
 
 ## 3. Data Source
 

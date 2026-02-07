@@ -9,8 +9,14 @@ The return calculation functions in `tddata.analytics` provide pandas-friendly i
 1. **Simple Returns** - Basic percentage return calculations
 2. **Annualized Returns** - Compound Annual Growth Rate (CAGR)
 3. **Holding Period** - Days held for each position
-4. **Operation Returns** - FIFO-matched buy/sell returns
-5. **Portfolio Returns** - Modified Dietz method for time-weighted returns
+4. **Operation Returns** - FIFO-matched buy/sell returns with coupon income
+5. **Portfolio Returns** - Modified Dietz method for time-weighted returns with coupon distributions
+
+**Key Features:**
+- **Coupon Support**: Handles semiannual coupon payments for bonds with "Juros Semestrais"
+- **FIFO Matching**: Proper first-in, first-out matching of buy/sell operations
+- **Modified Dietz**: Time-weighted returns that account for cash flow timing
+- **Data Quality**: Filters out zero-value operations and handles edge cases
 
 ## Core Functions
 
@@ -97,15 +103,17 @@ annualized = calculate_annualized_return(
 ### Operation-Level Returns
 
 ```python
-calculate_operations_returns(operations, prices, current_date=None)
+calculate_operations_returns(operations, prices, current_date=None, coupons=None)
 ```
 
 Calculates returns for individual buy/sell operations using FIFO matching.
+Supports semiannual coupon payments for bonds with "Juros Semestrais".
 
 **Parameters:**
 - `operations`: DataFrame with operation_date, bond_type, maturity_date, quantity, bond_value, operation_value, operation_type
 - `prices`: DataFrame with reference_date, bond_type, maturity_date, sell_price
 - `current_date`: Optional date for calculating returns (defaults to today)
+- `coupons`: Optional DataFrame with coupon payment data (from `read_interest_coupons`). Expected columns: bond_type, maturity_date, buyback_date, unit_price. If provided, coupon income is included in return calculations.
 
 **Returns:** DataFrame with:
 - All original operation columns
@@ -114,21 +122,29 @@ Calculates returns for individual buy/sell operations using FIFO matching.
 - `sell_date`: Date sold (for closed positions)
 - `sell_value`: Sale value (for closed positions)
 - `current_value`: Current market value (for open positions)
-- `end_value`: Final value (sell_value or current_value)
-- `simple_return`: Simple percentage return
-- `annualized_return`: Annualized return (CAGR)
+- `total_coupons`: Total coupon income received for this position
+- `end_value`: Final value (sell_value + current_value + total_coupons)
+- `simple_return`: Simple percentage return including coupons
+- `annualized_return`: Annualized return (CAGR) including coupons
+
+**Coupon Handling:**
+- Coupons are accumulated per lot during the holding period
+- Only coupons received between buy date and sell/end date are included
+- Coupon income is added to the final position value before calculating returns
+- For bonds without coupons, `total_coupons` will be 0.0
 
 **Example:**
 ```python
 from tddata import reader, analytics
 from tddata.constants import Column as C
 
-# Read operations and prices
+# Read operations, prices, and coupons
 operations = reader.read_operations('operations.csv')
 prices = reader.read_prices('prices.csv')
+coupons = reader.read_interest_coupons('interest_coupons.csv')  # Optional
 
-# Calculate returns
-returns = analytics.calculate_operations_returns(operations, prices)
+# Calculate returns with coupon support
+returns = analytics.calculate_operations_returns(operations, prices, coupons=coupons)
 
 # View closed positions with positive returns
 profitable = returns[
@@ -141,9 +157,18 @@ print(profitable[[
     C.OPERATION_DATE.value,
     'sell_date',
     'holding_days',
+    'total_coupons',
     'simple_return',
     'annualized_return'
 ]])
+```
+
+**Example Output:**
+```
+                bond_type operation_date  sell_date  holding_days  total_coupons  simple_return  annualized_return
+12  Tesouro IPCA+ com Juros Semestrais     2024-01-01 2024-07-01           182         250.00          15.25             8.12
+8           Tesouro Prefixado             2024-02-01 2024-08-01           182           0.00          12.50             6.65
+15          Tesouro Selic                 2024-03-01 2024-09-01           184           0.00          10.00             5.28
 ```
 
 ### Portfolio Monthly Returns (Modified Dietz)
@@ -153,11 +178,13 @@ calculate_portfolio_monthly_returns(
     operations,
     prices,
     start_date=None,
-    end_date=None
+    end_date=None,
+    coupons=None
 )
 ```
 
 Calculates monthly portfolio returns using the Modified Dietz method, which properly accounts for the timing of cash flows.
+Supports semiannual coupon payments for bonds with "Juros Semestrais".
 
 **Modified Dietz Formula:**
 ```
@@ -166,7 +193,7 @@ Return = (EMV - BMV - Net_CF) / (BMV + Weighted_CF)
 Where:
 - EMV = Ending Market Value
 - BMV = Beginning Market Value
-- Net_CF = Net Cash Flow (positive for deposits, negative for withdrawals)
+- Net_CF = Net Cash Flow (positive for deposits, negative for withdrawals/distributions)
 - Weighted_CF = Time-weighted cash flows
 ```
 
@@ -177,21 +204,29 @@ Weight = days_remaining_in_period / total_days_in_period
 
 A deposit early in the month has a weight close to 1.0, while a deposit at the end has a weight close to 0.0, properly reflecting its impact on returns.
 
+**Parameters:**
+- `operations`: DataFrame with operation_date, bond_type, maturity_date, quantity, bond_value, operation_value, operation_type columns
+- `prices`: DataFrame with reference_date, bond_type, maturity_date, sell_price columns
+- `start_date`: Start date for calculations (defaults to first operation)
+- `end_date`: End date (defaults to today)
+- `coupons`: Optional DataFrame with coupon payment data (from `read_interest_coupons`). Expected columns: bond_type, maturity_date, buyback_date, unit_price. If provided, coupons are treated as distributions (negative cash flows) in the Modified Dietz formula.
+
 **Returns:** DataFrame with:
 - `month`: Month start date
 - `monthly_return`: Return for that month (%)
 - `cumulative_return`: Cumulative return from start (%)
 - `portfolio_value`: Portfolio value at end of month
-- `net_cash_flow`: Net cash flows during month
+- `net_cash_flow`: Net cash flows during month (including coupon distributions)
 
 **Example:**
 ```python
-# Calculate monthly returns for entire portfolio
+# Calculate monthly returns for entire portfolio with coupon support
 monthly = analytics.calculate_portfolio_monthly_returns(
     operations,
     prices,
     start_date=pd.Timestamp('2024-01-01'),
-    end_date=pd.Timestamp('2024-12-31')
+    end_date=pd.Timestamp('2024-12-31'),
+    coupons=coupons  # Include coupon distributions
 )
 
 # Plot cumulative returns
@@ -199,7 +234,7 @@ import matplotlib.pyplot as plt
 
 plt.figure(figsize=(12, 6))
 plt.plot(monthly['month'], monthly['cumulative_return'])
-plt.title('Portfolio Cumulative Return')
+plt.title('Portfolio Cumulative Return (with Coupons)')
 plt.xlabel('Month')
 plt.ylabel('Cumulative Return (%)')
 plt.grid(True)
@@ -209,6 +244,10 @@ plt.show()
 print(f"Best month: {monthly['monthly_return'].max():.2f}%")
 print(f"Worst month: {monthly['monthly_return'].min():.2f}%")
 print(f"Total return: {monthly.iloc[-1]['cumulative_return']:.2f}%")
+
+# Analyze coupon impact
+total_coupons = monthly['net_cash_flow'].where(monthly['net_cash_flow'] < 0).sum()
+print(f"Total coupon distributions: {abs(total_coupons):.2f}")
 ```
 
 ## Comparison with tddata-db Returns Module
@@ -254,20 +293,25 @@ from tddata import reader, analytics
 data_dir = Path("~/data/tddata")
 operations = reader.read_operations(data_dir / "operations.csv")
 prices = reader.read_prices(data_dir / "prices.csv")
+coupons = reader.read_interest_coupons(data_dir / "interest_coupons.csv")  # Optional
 
-# Calculate returns for all operations
-returns = analytics.calculate_operations_returns(operations, prices)
+# Calculate returns for all operations with coupon support
+returns = analytics.calculate_operations_returns(operations, prices, coupons=coupons)
 
 # Group by investor
 investor_returns = returns.groupby('investor_id').agg({
     'operation_value': 'sum',
     'end_value': 'sum',
+    'total_coupons': 'sum',
     'simple_return': 'mean',
     'annualized_return': 'mean'
 }).reset_index()
 
 # Find best performers
 top_investors = investor_returns.nlargest(10, 'annualized_return')
+
+# Analyze coupon impact
+print(f"Total coupon income across all investors: {investor_returns['total_coupons'].sum():.2f}")
 ```
 
 ### Pattern 2: Compare Bond Types
@@ -277,19 +321,31 @@ top_investors = investor_returns.nlargest(10, 'annualized_return')
 by_type = returns.groupby('bond_type').agg({
     'simple_return': ['mean', 'median', 'std'],
     'annualized_return': ['mean', 'median'],
+    'total_coupons': ['sum', 'mean'],
     'holding_days': 'mean'
 }).reset_index()
 
-print(by_type)
+# Flatten column names
+by_type.columns = ['_'.join(col).strip('_') for col in by_type.columns]
+
+# Compare coupon vs non-coupon bonds
+coupon_bonds = by_type[by_type['bond_type'].str.contains('Juros Semestrais')]
+non_coupon_bonds = by_type[~by_type['bond_type'].str.contains('Juros Semestrais')]
+
+print("Coupon Bonds Performance:")
+print(coupon_bonds[['bond_type', 'annualized_return_mean', 'total_coupons_sum']])
+print("\nNon-Coupon Bonds Performance:")
+print(non_coupon_bonds[['bond_type', 'annualized_return_mean']])
 ```
 
 ### Pattern 3: Time-Series Analysis
 
 ```python
-# Monthly portfolio returns
+# Monthly portfolio returns with coupon support
 monthly = analytics.calculate_portfolio_monthly_returns(
     operations,
-    prices
+    prices,
+    coupons=coupons
 )
 
 # Rolling 12-month return
@@ -298,6 +354,14 @@ monthly['rolling_12m'] = monthly['monthly_return'].rolling(12).sum()
 # Volatility (standard deviation of monthly returns)
 volatility = monthly['monthly_return'].std()
 print(f"Monthly volatility: {volatility:.2f}%")
+
+# Analyze seasonal coupon patterns
+monthly['coupon_distributions'] = monthly['net_cash_flow'].where(monthly['net_cash_flow'] < 0, 0).abs()
+monthly.groupby(monthly['month'].dt.month)['coupon_distributions'].mean().plot(kind='bar')
+plt.title('Average Monthly Coupon Distributions')
+plt.xlabel('Month')
+plt.ylabel('Average Coupon Amount')
+plt.show()
 ```
 
 ### Pattern 4: Risk-Adjusted Returns
@@ -329,6 +393,24 @@ The functions include safeguards:
 - Return capping (-100% to 1000%) to handle data anomalies
 - Invalid value handling (returns 0.0 for invalid inputs)
 
+### Coupon Calculations
+
+**Operation-Level Returns:**
+- Coupons are accumulated per lot during the holding period
+- Only coupons received between buy date and sell/end date are counted
+- Total coupon income is added to position value before return calculation
+- Formula: `end_value = sell_value + current_value + total_coupons`
+
+**Portfolio-Level Returns:**
+- Coupons are treated as distributions (negative cash flows)
+- Time-weighted like other cash flows in Modified Dietz formula
+- Early-month coupons have higher weight than late-month coupons
+- Reduces portfolio value but represents income to investors
+
+**Data Filtering:**
+- Zero bond value operations are automatically filtered out
+- Invalid coupon data is handled gracefully (missing coupons = 0.0)
+
 ### Data Quality
 
 For accurate results, ensure:
@@ -336,15 +418,23 @@ For accurate results, ensure:
 - **Numeric Columns**: Values are float/numeric types
 - **Price Data**: Complete monthly price coverage
 - **Operation Types**: Correctly coded ('C'/'D' for buys, 'V'/'R' for sells)
+- **Coupon Data** (optional): When using coupons parameter, ensure:
+  - `bond_type` and `maturity_date` match operations and prices data
+  - `buyback_date` represents coupon payment dates
+  - `unit_price` is the coupon amount per bond unit
+  - Data covers the full holding period for accurate calculations
 
 ## Future Enhancements
 
 Possible additions:
-1. Tax-adjusted returns (accounting for Brazilian IR on bond gains)
+1. Tax-adjusted returns (accounting for Brazilian IR on bond gains and coupon income)
 2. Benchmark comparison (CDI, IPCA, etc.)
-3. Drawdown calculations
+3. Drawdown calculations and maximum drawdown analysis
 4. Multi-currency support
-5. Performance attribution (contribution by bond type)
+5. Performance attribution (contribution by bond type and coupon yield)
+6. Coupon reinvestment analysis
+7. Yield-to-maturity calculations including coupons
+8. Scenario analysis (stress testing with different coupon rates)
 
 ## References
 
