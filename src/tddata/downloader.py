@@ -40,6 +40,77 @@ async def get_dataset_resources(
     return data["result"]["resources"]
 
 
+async def get_download_info(dest_dir: Path, dataset_id: str) -> List[Dict]:
+    """Get metadata about files that would be downloaded without downloading them.
+
+    Args:
+        dest_dir: The directory path where files would be saved
+        dataset_id: The CKAN dataset ID or name
+
+    Returns:
+        List[Dict]: List of metadata dictionaries containing:
+            - resource_name: Name of the resource from CKAN
+            - url: Download URL
+            - filename: Generated filename with timestamp
+            - destination: Full path where file would be saved
+            - size: File size in bytes (if available)
+            - last_modified: Last modification date (if available)
+            - format: File format
+            - would_download: Whether file would be downloaded (based on size check)
+            - latest_local: Path to latest local version (if exists)
+    """
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    async with httpx.AsyncClient() as client:
+        try:
+            resources = await get_dataset_resources(client, dataset_id)
+        except Exception as e:
+            raise ValueError(f"Error fetching resources for {dataset_id}: {e}")
+
+        info_list = []
+        for resource in resources:
+            if resource.get("format", "").upper() != "CSV":
+                continue
+
+            url = resource["url"]
+            last_modified_str = resource.get("last_modified") or resource.get("created")
+            filename = generate_filename(resource["name"], last_modified_str)
+            dest_filepath = dest_dir / filename
+
+            # Check for existing latest file
+            slug = filename.split("@")[0]
+            latest_file = get_latest_file(dest_dir, f"{slug}*.csv")
+
+            # Try to get file size and ensure it's an integer
+            file_size = resource.get("size", 0)
+            if file_size:
+                try:
+                    file_size = int(file_size)
+                except (ValueError, TypeError):
+                    file_size = 0
+            would_download = True
+
+            # Check if we would skip this download
+            if latest_file and file_size and latest_file.stat().st_size == file_size:
+                would_download = False
+
+            info_list.append(
+                {
+                    "resource_name": resource.get("name", ""),
+                    "url": url,
+                    "filename": filename,
+                    "destination": str(dest_filepath),
+                    "size": file_size,
+                    "last_modified": last_modified_str,
+                    "format": resource.get("format", ""),
+                    "would_download": would_download,
+                    "latest_local": str(latest_file) if latest_file else None,
+                }
+            )
+
+        return info_list
+
+
 async def download_resource(
     client: httpx.AsyncClient,
     resource: Dict,
