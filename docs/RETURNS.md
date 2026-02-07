@@ -382,7 +382,7 @@ if std_return > 0:
 
 ### Performance Considerations
 
-1. **Vectorized Operations**: All calculations use pandas vectorized operations for performance
+1. **Vectorized Operations**: All calculations use Polars vectorized operations for performance
 2. **Memory Efficiency**: Functions return new DataFrames without modifying input data
 3. **Large Datasets**: For very large datasets, consider chunking operations
 
@@ -414,7 +414,7 @@ The functions include safeguards:
 ### Data Quality
 
 For accurate results, ensure:
-- **Date Columns**: Properly parsed as pandas datetime
+- **Date Columns**: Properly parsed as Polars datetime
 - **Numeric Columns**: Values are float/numeric types
 - **Price Data**: Complete monthly price coverage
 - **Operation Types**: Correctly coded ('C'/'D' for buys, 'V'/'R' for sells)

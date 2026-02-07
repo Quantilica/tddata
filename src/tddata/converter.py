@@ -41,38 +41,9 @@ def convert_to_parquet(
     reader_func = _get_reader_function(csv_path, dataset_type)
 
     # Read the data using the specialized reader (which cleans and types it)
-    # We don't use chunksize here because we want to save the whole file at once
-    # for optimal parquet row groups, unless the file is massive.
-    # For massive files, we would need to read in chunks and append to parquet,
-    # but let's keep it simple for now or use the chunk iterator if implemented.
-
-    # Since we implemented chunks in reader, we can be memory safe even for conversion!
-
-    first_chunk = True
-    for df_chunk in reader_func(csv_path, chunksize=100_000):
-        if first_chunk:
-            df_chunk.to_parquet(parquet_path, index=False, engine="pyarrow")
-            first_chunk = False
-        else:
-            # Append to existing parquet file
-            # Pyarrow table can be appended, but pandas to_parquet default doesn't support append easily
-            # without fastparquet or specific engine calls.
-            # Using pyarrow directly is safer for append, but let's stick to pandas for simplicity.
-            # Actually, standard pandas to_parquet doesn't support 'append' mode elegantly.
-            # A common strategy is to write multiple files (partitioned dataset) or use pyarrow directly.
-            # Given the constraints, let's load full if it fits or use a specific implementation.
-            # For simplicity in this step, let's assume we can load it fully OR
-            # implement a robust chunk-to-parquet logic.
-
-            # Let's revert to full load for now to avoid complexity with parquet metadata handling on append
-            # unless we use fastparquet. We standardized on pyarrow.
-            # Re-reading fully for now to ensure valid single parquet file.
-            pass
-
-    # Re-doing full read for simplicity of writing single valid parquet file
-    # If optimization is needed later, we can implement pyarrow ParquetWriter
+    # Polars DataFrames can be directly written to parquet
     df = reader_func(csv_path)
-    df.to_parquet(parquet_path, index=False)
+    df.write_parquet(parquet_path)
 
     return parquet_path
 

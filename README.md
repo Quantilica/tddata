@@ -27,7 +27,7 @@ pip install "git+https://github.com/dankkom/tddata#egg=tddata"
 pip install "git+https://github.com/dankkom/tddata#egg=tddata[analysis]"
 ```
 
-The minimal installation includes only `httpx` and `tqdm` for downloading data. The `[analysis]` extras add `pandas`, `pyarrow`, and `seaborn` for reading CSV files and creating visualizations.
+The minimal installation includes only `httpx` and `tqdm` for downloading data. The `[analysis]` extras add `Polars`, and `Altair` for reading CSV files and creating visualizations.
 
 ## 2. Usage
 

@@ -24,10 +24,10 @@ import unittest
 from unittest.mock import patch
 
 
-def _has_pandas():
-    """Check if pandas is available."""
+def _has_polars():
+    """Check if polars is available."""
     try:
-        import pandas  # noqa: F401
+        import polars  # noqa: F401
 
         return True
     except ImportError:
@@ -78,8 +78,8 @@ class TestOptionalDependencies(unittest.TestCase):
         self.assertTrue(hasattr(tddata.downloader, "get_dataset_resources"))
 
     @unittest.skipUnless(
-        _has_pandas(),
-        "Requires analysis extras (pandas, seaborn)",
+        _has_polars(),
+        "Requires analysis extras (polars, seaborn)",
     )
     def test_reader_functions_with_extras(self):
         """Test that reader module works when extras are installed."""
@@ -106,8 +106,8 @@ class TestOptionalDependencies(unittest.TestCase):
             )
 
     @unittest.skipUnless(
-        _has_pandas(),
-        "Requires analysis extras (pandas, seaborn)",
+        _has_polars(),
+        "Requires analysis extras (polars, seaborn)",
     )
     def test_plot_functions_with_extras(self):
         """Test that plot module works when extras are installed."""

@@ -17,7 +17,7 @@
 import unittest
 from datetime import datetime
 
-import pandas as pd
+import polars as pl
 
 from tddata import analytics
 from tddata.constants import Column
@@ -25,7 +25,7 @@ from tddata.constants import Column
 
 class TestAnalytics(unittest.TestCase):
     def setUp(self):
-        self.prices_data = pd.DataFrame(
+        self.prices_data = pl.DataFrame(
             {
                 Column.REFERENCE_DATE.value: [
                     datetime(2024, 1, 2),
@@ -42,7 +42,7 @@ class TestAnalytics(unittest.TestCase):
                 Column.SELL_PRICE.value: [895.0, 890.0, 990.0],
             }
         )
-        self.prices_data_with_zeros = pd.DataFrame(
+        self.prices_data_with_zeros = pl.DataFrame(
             {
                 Column.REFERENCE_DATE.value: [
                     datetime(2024, 1, 2),
@@ -61,17 +61,17 @@ class TestAnalytics(unittest.TestCase):
     def test_prepare_prices(self):
         # Test filtering by bond type
         result = analytics.prepare_prices(self.prices_data, "Type A")
-        self.assertEqual(len(result), 2)
+        self.assertEqual(result.height, 2)
         self.assertTrue((result[Column.BOND_TYPE.value] == "Type A").all())
 
         # Test sorting
         expected_dates = [datetime(2024, 1, 1), datetime(2024, 1, 2)]
-        self.assertListEqual(result[Column.REFERENCE_DATE.value].tolist(), expected_dates)
+        self.assertListEqual(result[Column.REFERENCE_DATE.value].to_list(), expected_dates)
 
         # Test filtering out zero prices
         result_with_zeros = analytics.prepare_prices(self.prices_data_with_zeros, "Type A")
-        self.assertEqual(len(result_with_zeros), 1)
-        self.assertEqual(result_with_zeros.iloc[0][Column.BUY_PRICE.value], 905.0)
+        self.assertEqual(result_with_zeros.height, 1)
+        self.assertEqual(result_with_zeros[Column.BUY_PRICE.value][0], 905.0)
 
 
 if __name__ == "__main__":

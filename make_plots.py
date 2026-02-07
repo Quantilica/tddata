@@ -17,30 +17,20 @@
 import argparse
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-import pandas as pd
-import seaborn as sns
+import polars as pl
 
 from tddata import plot, reader, storage
 from tddata.constants import Column as C
-
-# Set the style of the plot
-sns.set_theme(style="ticks")
-plt.rcParams["axes.labelsize"] = 8
-plt.rcParams["axes.titlesize"] = 12
-plt.rcParams["xtick.labelsize"] = 8
-plt.rcParams["ytick.labelsize"] = 8
-plt.rcParams["legend.fontsize"] = 8
 
 PLOTS_DIR = Path("plots")
 PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def save_plot(fig, filename):
+def save_plot(chart, filename):
+    """Save an Altair chart to a file."""
     filepath = PLOTS_DIR / filename
     print(f"Saving {filepath}...")
-    fig.savefig(filepath, dpi=300, bbox_inches="tight")
-    plt.close(fig)
+    chart.save(str(filepath))
 
 
 def run_prices(data_dir: Path):
@@ -66,8 +56,8 @@ def run_prices(data_dir: Path):
         for var in variables:
             print(f"  Plotting {bond_type} - {var}...")
             try:
-                fig = plot.plot_prices(data, bond_type, var)
-                save_plot(fig, f"prices_{bond_slug}_{var}.png")
+                chart = plot.plot_prices(data, bond_type, var)
+                save_plot(chart, f"prices_{bond_slug}_{var}.html")
             except Exception as e:
                 print(f"  Error plotting {bond_type} {var}: {e}")
 
@@ -82,12 +72,12 @@ def run_stock(data_dir: Path):
     data = reader.read_stock(f)
 
     print("  Plotting stock evolution by bond type...")
-    fig = plot.plot_stock(data, by_bond_type=True)
-    save_plot(fig, "stock_evolution_by_type.png")
+    chart = plot.plot_stock(data, by_bond_type=True)
+    save_plot(chart, "stock_evolution_by_type.html")
 
     print("  Plotting total stock evolution...")
-    fig = plot.plot_stock(data, by_bond_type=False)
-    save_plot(fig, "stock_evolution_total.png")
+    chart = plot.plot_stock(data, by_bond_type=False)
+    save_plot(chart, "stock_evolution_total.html")
 
 
 def run_investors(data_dir: Path):
@@ -113,17 +103,17 @@ def run_investors(data_dir: Path):
     if not all_data:
         return
 
-    full_data = pd.concat(all_data, ignore_index=True)
+    full_data = pl.concat(all_data)
     # Deduplicate by investor ID only (investors can have multiple records if registered with multiple institutions)
     # Keep the first occurrence
-    full_data = full_data.drop_duplicates(subset=[C.INVESTOR_ID.value], keep="first")
+    full_data = full_data.unique(subset=[C.INVESTOR_ID.value], keep="first")
     # Drop dates before 2000
-    full_data = full_data[full_data[C.JOIN_DATE.value] >= "2000-01-01"]
+    full_data = full_data.filter(pl.col(C.JOIN_DATE.value) >= pl.date(2000, 1, 1))
 
     # Plot population pyramid (age by gender)
     print("  Plotting population pyramid (age by gender)...")
-    fig = plot.plot_investors_population_pyramid(full_data)
-    save_plot(fig, "investors_population_pyramid.png")
+    chart = plot.plot_investors_population_pyramid(full_data)
+    save_plot(chart, "investors_population_pyramid.html")
 
     # Plot other demographics
     demographics = [
@@ -139,12 +129,12 @@ def run_investors(data_dir: Path):
         if demo in [C.PROFESSION.value, C.MARITAL_STATUS.value]:
             kind = "barh"
 
-        fig = plot.plot_investors_demographics(full_data, column=demo, chart_type=kind)
-        save_plot(fig, f"investors_demographics_{demo}.png")
+        chart = plot.plot_investors_demographics(full_data, column=demo, chart_type=kind)
+        save_plot(chart, f"investors_demographics_{demo}.html")
 
     print("  Plotting new investors evolution (all history)...")
-    fig = plot.plot_investors_evolution(full_data, freq="ME")
-    save_plot(fig, "investors_new_evolution_history.png")
+    chart = plot.plot_investors_evolution(full_data, freq="1mo")
+    save_plot(chart, "investors_new_evolution_history.html")
 
 
 def run_operations(data_dir: Path):
@@ -164,10 +154,10 @@ def run_operations(data_dir: Path):
         all_data.append(df)
 
     if all_data:
-        full_data = pd.concat(all_data, ignore_index=True)
+        full_data = pl.concat(all_data)
         print("  Plotting operations by type (all history)...")
-        fig = plot.plot_operations(full_data, by_type=True)
-        save_plot(fig, "operations_evolution_by_type_history.png")
+        chart = plot.plot_operations(full_data, by_type=True)
+        save_plot(chart, "operations_evolution_by_type_history.html")
 
 
 def run_sales(data_dir: Path):
@@ -180,8 +170,8 @@ def run_sales(data_dir: Path):
     data = reader.read_sales(f)
 
     print("  Plotting sales by bond type...")
-    fig = plot.plot_sales(data, by_bond_type=True)
-    save_plot(fig, "sales_evolution_by_type.png")
+    chart = plot.plot_sales(data, by_bond_type=True)
+    save_plot(chart, "sales_evolution_by_type.html")
 
 
 def run_buybacks(data_dir: Path):
@@ -194,8 +184,8 @@ def run_buybacks(data_dir: Path):
     data = reader.read_buybacks(f)
 
     print("  Plotting buybacks by bond type...")
-    fig = plot.plot_buybacks(data, by_bond_type=True)
-    save_plot(fig, "buybacks_evolution_by_type.png")
+    chart = plot.plot_buybacks(data, by_bond_type=True)
+    save_plot(chart, "buybacks_evolution_by_type.html")
 
 
 def run_maturities(data_dir: Path):
@@ -208,8 +198,8 @@ def run_maturities(data_dir: Path):
     data = reader.read_maturities(f)
 
     print("  Plotting maturities by bond type...")
-    fig = plot.plot_maturities(data, by_bond_type=True)
-    save_plot(fig, "maturities_evolution_by_type.png")
+    chart = plot.plot_maturities(data, by_bond_type=True)
+    save_plot(chart, "maturities_evolution_by_type.html")
 
 
 def run_interest_coupons(data_dir: Path):
@@ -224,8 +214,8 @@ def run_interest_coupons(data_dir: Path):
     data = reader.read_interest_coupons(f)
 
     print("  Plotting interest coupons by bond type...")
-    fig = plot.plot_interest_coupons(data, by_bond_type=True)
-    save_plot(fig, "interest_coupons_evolution_by_type.png")
+    chart = plot.plot_interest_coupons(data, by_bond_type=True)
+    save_plot(chart, "interest_coupons_evolution_by_type.html")
 
 
 def main():

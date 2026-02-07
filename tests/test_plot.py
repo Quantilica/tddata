@@ -17,8 +17,8 @@
 import unittest
 from datetime import datetime
 
-import matplotlib.pyplot as plt
-import pandas as pd
+import altair as alt
+import polars as pl
 
 from tddata import plot
 from tddata.constants import Column
@@ -27,7 +27,7 @@ from tddata.constants import Column
 class TestPlot(unittest.TestCase):
     def setUp(self):
         # Create dummy data for testing
-        self.stock_data = pd.DataFrame(
+        self.stock_data = pl.DataFrame(
             {
                 Column.STOCK_MONTH.value: [datetime(2024, 1, 1), datetime(2024, 2, 1)],
                 Column.BOND_TYPE.value: ["Type A", "Type A"],
@@ -35,7 +35,7 @@ class TestPlot(unittest.TestCase):
             }
         )
 
-        self.investors_data = pd.DataFrame(
+        self.investors_data = pl.DataFrame(
             {
                 Column.JOIN_DATE.value: [datetime(2024, 1, 1), datetime(2024, 1, 15)],
                 Column.STATE.value: ["SP", "RJ"],
@@ -44,7 +44,7 @@ class TestPlot(unittest.TestCase):
             }
         )
 
-        self.operations_data = pd.DataFrame(
+        self.operations_data = pl.DataFrame(
             {
                 Column.OPERATION_DATE.value: [
                     datetime(2024, 1, 1),
@@ -55,7 +55,7 @@ class TestPlot(unittest.TestCase):
             }
         )
 
-        self.sales_data = pd.DataFrame(
+        self.sales_data = pl.DataFrame(
             {
                 Column.SALE_DATE.value: [datetime(2024, 1, 1)],
                 Column.VALUE.value: [1000.0],
@@ -63,7 +63,7 @@ class TestPlot(unittest.TestCase):
             }
         )
 
-        self.buybacks_data = pd.DataFrame(
+        self.buybacks_data = pl.DataFrame(
             {
                 Column.BUYBACK_DATE.value: [datetime(2024, 1, 1)],
                 Column.VALUE.value: [1000.0],
@@ -71,7 +71,7 @@ class TestPlot(unittest.TestCase):
             }
         )
 
-        self.maturities_data = pd.DataFrame(
+        self.maturities_data = pl.DataFrame(
             {
                 Column.BUYBACK_DATE.value: [datetime(2024, 1, 1)],
                 Column.VALUE.value: [1000.0],
@@ -79,7 +79,7 @@ class TestPlot(unittest.TestCase):
             }
         )
 
-        self.prices_data = pd.DataFrame(
+        self.prices_data = pl.DataFrame(
             {
                 Column.REFERENCE_DATE.value: [
                     datetime(2024, 1, 1),
@@ -95,85 +95,58 @@ class TestPlot(unittest.TestCase):
             }
         )
 
-    def tearDown(self):
-        plt.close("all")
-
     def test_plot_stock(self):
-        result = plot.plot_stock(self.stock_data)
-        self.assertIsInstance(result, tuple)
-        self.assertIsInstance(result[0], plt.Figure)
-        self.assertIsInstance(result[1], plt.Axes)
+        chart = plot.plot_stock(self.stock_data)
+        self.assertIsInstance(chart, alt.Chart)
 
-        result = plot.plot_stock(self.stock_data, by_bond_type=False)
-        self.assertIsInstance(result, tuple)
-        self.assertIsInstance(result[0], plt.Figure)
-        self.assertIsInstance(result[1], plt.Axes)
+        chart = plot.plot_stock(self.stock_data, by_bond_type=False)
+        self.assertIsInstance(chart, alt.Chart)
 
     def test_plot_investors_demographics(self):
-        fig = plot.plot_investors_demographics(
-            self.investors_data, column=Column.STATE.value
-        )
-        self.assertIsInstance(fig, plt.Figure)
+        chart = plot.plot_investors_demographics(self.investors_data, column=Column.STATE.value)
+        self.assertIsInstance(chart, alt.Chart)
 
-        fig = plot.plot_investors_demographics(
-            self.investors_data, column=Column.STATE.value, chart_type="pie"
-        )
-        self.assertIsInstance(fig, plt.Figure)
+        chart = plot.plot_investors_demographics(self.investors_data, column=Column.STATE.value, chart_type="pie")
+        self.assertIsInstance(chart, alt.Chart)
 
-        fig = plot.plot_investors_demographics(
-            self.investors_data, column=Column.STATE.value, chart_type="barh"
-        )
-        self.assertIsInstance(fig, plt.Figure)
+        chart = plot.plot_investors_demographics(self.investors_data, column=Column.STATE.value, chart_type="barh")
+        self.assertIsInstance(chart, alt.Chart)
 
     def test_plot_investors_population_pyramid(self):
-        fig = plot.plot_investors_population_pyramid(self.investors_data)
-        self.assertIsInstance(fig, plt.Figure)
+        chart = plot.plot_investors_population_pyramid(self.investors_data)
+        self.assertIsInstance(chart, alt.Chart)
 
     def test_plot_investors_evolution(self):
-        result = plot.plot_investors_evolution(self.investors_data)
-        self.assertIsInstance(result, tuple)
-        self.assertIsInstance(result[0], plt.Figure)
-        self.assertIsInstance(result[1], plt.Axes)
+        chart = plot.plot_investors_evolution(self.investors_data)
+        self.assertIsInstance(chart, alt.Chart)
 
     def test_plot_operations(self):
-        result = plot.plot_operations(self.operations_data)
-        self.assertIsInstance(result, tuple)
-        self.assertIsInstance(result[0], plt.Figure)
-        self.assertIsInstance(result[1], plt.Axes)
+        chart = plot.plot_operations(self.operations_data)
+        self.assertIsInstance(chart, alt.Chart)
 
-        result = plot.plot_operations(self.operations_data, by_type=False)
-        self.assertIsInstance(result, tuple)
-        self.assertIsInstance(result[0], plt.Figure)
-        self.assertIsInstance(result[1], plt.Axes)
+        chart = plot.plot_operations(self.operations_data, by_type=False)
+        self.assertIsInstance(chart, alt.Chart)
 
     def test_plot_sales(self):
-        result = plot.plot_sales(self.sales_data)
-        self.assertIsInstance(result, tuple)
-        self.assertIsInstance(result[0], plt.Figure)
-        self.assertIsInstance(result[1], plt.Axes)
+        chart = plot.plot_sales(self.sales_data)
+        self.assertIsInstance(chart, alt.Chart)
 
     def test_plot_buybacks(self):
-        result = plot.plot_buybacks(self.buybacks_data)
-        self.assertIsInstance(result, tuple)
-        self.assertIsInstance(result[0], plt.Figure)
-        self.assertIsInstance(result[1], plt.Axes)
+        chart = plot.plot_buybacks(self.buybacks_data)
+        self.assertIsInstance(chart, alt.Chart)
 
     def test_plot_maturities(self):
-        result = plot.plot_maturities(self.maturities_data)
-        self.assertIsInstance(result, tuple)
-        self.assertIsInstance(result[0], plt.Figure)
-        self.assertIsInstance(result[1], plt.Axes)
+        chart = plot.plot_maturities(self.maturities_data)
+        self.assertIsInstance(chart, alt.Chart)
 
     def test_plot_interest_coupons(self):
         # Interest coupons uses same structure as maturities
-        result = plot.plot_interest_coupons(self.maturities_data)
-        self.assertIsInstance(result, tuple)
-        self.assertIsInstance(result[0], plt.Figure)
-        self.assertIsInstance(result[1], plt.Axes)
+        chart = plot.plot_interest_coupons(self.maturities_data)
+        self.assertIsInstance(chart, alt.Chart)
 
     def test_plot_prices(self):
-        fig = plot.plot_prices(self.prices_data, "Type A", Column.BUY_PRICE.value)
-        self.assertIsInstance(fig, plt.Figure)
+        chart = plot.plot_prices(self.prices_data, "Type A", Column.BUY_PRICE.value)
+        self.assertIsInstance(chart, alt.Chart)
 
 
 if __name__ == "__main__":

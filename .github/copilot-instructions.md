@@ -7,7 +7,7 @@
 
 ### Data Flow
 1. **Download** (`downloader.py`): Fetches CSV files from Tesouro Transparente CKAN API
-2. **Read** (`reader.py`): Parses raw CSVs into analyst-friendly pandas DataFrames with standardized columns
+2. **Read** (`reader.py`): Parses raw CSVs into analyst-friendly Polars DataFrames with standardized columns
 3. **Plot** (`plot.py`): Generates matplotlib/seaborn visualizations
 
 ### Column Name Convention (CRITICAL)
@@ -51,7 +51,7 @@ This project uses **uv** for package and virtual environment management. Do not 
 - Import from `typing` module when needed
 
 ### Dependencies
-Core: `pandas`, `matplotlib`, `seaborn`, `httpx`, `tqdm`
+Core: `Polars`, `Altair`, `httpx`, `tqdm`
 No heavy frameworks - keep it lightweight and data-focused.
 
 ## Common Patterns

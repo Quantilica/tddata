@@ -4,12 +4,12 @@ This document provides a guide for the Gemini Code Assistant to understand and i
 
 ## 1. Project Overview
 
-`tddata` is a Python library for downloading, reading, analyzing, and visualizing historical data from the Brazilian "Tesouro Direto" program. It fetches data from the official Tesouro Transparente CKAN API, provides reader functions to parse the data into standardized pandas DataFrames, and includes plotting capabilities for data visualization.
+`tddata` is a Python library for downloading, reading, analyzing, and visualizing historical data from the Brazilian "Tesouro Direto" program. It fetches data from the official Tesouro Transparente CKAN API, provides reader functions to parse the data into standardized Polars DataFrames, and includes plotting capabilities for data visualization.
 
 The project is structured into several modules:
 
 - **`downloader.py`**: Handles asynchronous downloading of datasets from the CKAN API.
-- **`reader.py`**: Contains specialized functions to read raw CSV files into cleaned and typed pandas DataFrames.
+- **`reader.py`**: Contains specialized functions to read raw CSV files into cleaned and typed Polars DataFrames.
 - **`plot.py`**: Provides high-level functions to generate plots from the data using Matplotlib and Seaborn.
 - **`analytics.py`**: Includes functions for data aggregation and preparation for plotting.
 - **`constants.py`**: Defines all constants, enums (like `BondType`, `OperationType`), and DataFrame column names (`Column` enum). This is the single source of truth for schema definitions.
@@ -52,8 +52,8 @@ The project is structured into several modules:
 ## 4. Dependencies and Setup
 
 - **Core Dependencies**: `httpx` for HTTP requests and `tqdm` for progress bars.
-- **Optional (`analysis`) Dependencies**: `pandas`, `pyarrow`, `seaborn` for data analysis and plotting.
-- **Installation**: The project is installed in editable mode. The full installation for development is `pip install -e .[analysis]`. The project uses `uv` for package management. Use `uv add` to add new dependencies. Use `uv run` to run scripts.
+- **Optional (`analysis`) Dependencies**: `Polars`, `Altair` for data analysis and plotting.
+- **Installation**: The project is installed in editable mode. The full installation for development is `pip install -e .[analysis]`.
 - **Testing**: Tests are located in the `tests/` directory and are run using the `unittest` framework. The command to run all tests is `python -m unittest discover -s tests -p "test_*.py"`. The CI pipeline in `.github/workflows/run-tests.yml` shows the full setup and test execution process.
 
 ## 5. How to Work with the Codebase

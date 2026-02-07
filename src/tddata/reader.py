@@ -17,7 +17,7 @@
 """Functions to read Tesouro Direto's data files.
 
 This module provides functions to parse raw CSV files downloaded from the
-Tesouro Transparente API into clean, analyst-friendly pandas DataFrames.
+Tesouro Transparente API into clean, analyst-friendly Polars DataFrames.
 It handles column renaming (Portuguese to English), type conversion,
 and data normalization using the schema defined in `constants.py`.
 
@@ -28,7 +28,7 @@ defined in the `Column` enum.
 from pathlib import Path
 from typing import Callable, Dict, Iterator, List, Optional, Union
 
-import pandas as pd
+import polars as pl
 
 from .constants import (
     AccountStatus,
@@ -45,37 +45,45 @@ def _read_and_process_csv(
     column_mapping: Dict[str, str],
     date_columns: Optional[List[str]] = None,
     dtype_mapping: Optional[Dict[str, str]] = None,
-    post_process_func: Optional[Callable[[pd.DataFrame], pd.DataFrame]] = None,
+    post_process_func: Optional[Callable[[pl.DataFrame], pl.DataFrame]] = None,
     chunksize: Optional[int] = None,
-) -> Union[pd.DataFrame, Iterator[pd.DataFrame]]:
+) -> Union[pl.DataFrame, Iterator[pl.DataFrame]]:
     """Generic function to read and process a CSV file."""
-    data = pd.read_csv(
-        filepath,
-        sep=";",
-        decimal=",",
-        parse_dates=date_columns,
-        dayfirst=True,
-        chunksize=chunksize,
-    )
 
-    def _process(df: pd.DataFrame) -> pd.DataFrame:
-        df = df.rename(columns=column_mapping)
+    def _process(df: pl.DataFrame) -> pl.DataFrame:
+        df = df.rename(column_mapping)
         if C.BOND_TYPE.value in df.columns:
-            df[C.BOND_TYPE.value] = df[C.BOND_TYPE.value].apply(normalize_bond_type)
+            df = df.with_columns(pl.col(C.BOND_TYPE.value).map_elements(normalize_bond_type, return_dtype=pl.String))
         if dtype_mapping:
-            df = df.astype(dtype_mapping)
+            # Convert dtype string to Polars casting
+            for col, dtype in dtype_mapping.items():
+                if col in df.columns:
+                    if dtype == "category":
+                        df = df.with_columns(pl.col(col).cast(pl.Categorical))
         if post_process_func:
             df = post_process_func(df)
         return df
 
     if chunksize is None:
+        # Full read
+        data = pl.read_csv(
+            filepath,
+            separator=";",
+            decimal_comma=True,
+        )
         return _process(data)
-    return (_process(chunk) for chunk in data)
+    else:
+        # Batched reading
+        reader = pl.read_csv_batched(
+            filepath,
+            separator=";",
+            decimal_comma=True,
+            batch_size=chunksize,
+        )
+        return (_process(batch) for batch in reader)
 
 
-def read_prices(
-    filepath: Path, chunksize: Optional[int] = None
-) -> Union[pd.DataFrame, Iterator[pd.DataFrame]]:
+def read_prices(filepath: Path, chunksize: Optional[int] = None) -> Union[pl.DataFrame, Iterator[pl.DataFrame]]:
     """Read bond prices and rates (Taxas e Preços dos Títulos)."""
     column_mapping = {
         "Data Base": C.REFERENCE_DATE.value,
@@ -87,18 +95,26 @@ def read_prices(
         "PU Venda Manha": C.SELL_PRICE.value,
         "PU Base Manha": C.BASE_PRICE.value,
     }
+
+    def post_process(df: pl.DataFrame) -> pl.DataFrame:
+        # Parse dates with day-first format
+        return df.with_columns(
+            [
+                pl.col(C.REFERENCE_DATE.value).str.to_date("%d/%m/%Y"),
+                pl.col(C.MATURITY_DATE.value).str.to_date("%d/%m/%Y"),
+            ]
+        )
+
     return _read_and_process_csv(
         filepath,
         column_mapping,
-        date_columns=["Data Vencimento", "Data Base"],
+        post_process_func=post_process,
         chunksize=chunksize,
     )
 
 
 
-def read_stock(
-    filepath: Path, chunksize: Optional[int] = None
-) -> Union[pd.DataFrame, Iterator[pd.DataFrame]]:
+def read_stock(filepath: Path, chunksize: Optional[int] = None) -> Union[pl.DataFrame, Iterator[pl.DataFrame]]:
     """Read bond stock (Estoque)."""
     column_mapping = {
         "Tipo Titulo": C.BOND_TYPE.value,
@@ -109,12 +125,13 @@ def read_stock(
         "Valor Estoque": C.STOCK_VALUE.value,
     }
 
-    def post_process(df: pd.DataFrame) -> pd.DataFrame:
-        df[C.MATURITY_DATE.value] = pd.to_datetime(
-            df[C.MATURITY_DATE.value], dayfirst=True
+    def post_process(df: pl.DataFrame) -> pl.DataFrame:
+        return df.with_columns(
+            [
+                pl.col(C.MATURITY_DATE.value).str.to_date("%d/%m/%Y"),
+                pl.col(C.STOCK_MONTH.value).str.to_date("%m/%Y"),
+            ]
         )
-        df[C.STOCK_MONTH.value] = pd.to_datetime(df[C.STOCK_MONTH.value], format="%m/%Y")
-        return df
 
     return _read_and_process_csv(
         filepath,
@@ -124,9 +141,7 @@ def read_stock(
     )
 
 
-def read_investors(
-    filepath: Path, chunksize: Optional[int] = None
-) -> Union[pd.DataFrame, Iterator[pd.DataFrame]]:
+def read_investors(filepath: Path, chunksize: Optional[int] = None) -> Union[pl.DataFrame, Iterator[pl.DataFrame]]:
     """Read investors data (Investidores)."""
     column_mapping = {
         "Codigo do Investidor": C.INVESTOR_ID.value,
@@ -149,32 +164,33 @@ def read_investors(
         C.COUNTRY.value: "category",
     }
 
-    def post_process(df: pd.DataFrame) -> pd.DataFrame:
+    def post_process(df: pl.DataFrame) -> pl.DataFrame:
+        # Parse date
+        df = df.with_columns(pl.col(C.JOIN_DATE.value).str.to_date("%d/%m/%Y"))
+        # Map enum values and cast to categorical
         gender_map = {e.value: e.value for e in Gender}
-        df[C.GENDER.value] = df[C.GENDER.value].map(gender_map).astype("category")
         status_map = {e.value: e.value for e in AccountStatus}
-        df[C.ACCOUNT_STATUS.value] = (
-            df[C.ACCOUNT_STATUS.value].map(status_map).astype("category")
-        )
         traded_map = {e.value: e.value for e in TradedLast12Months}
-        df[C.TRADED_LAST_12_MONTHS.value] = (
-            df[C.TRADED_LAST_12_MONTHS.value].map(traded_map).astype("category")
+
+        df = df.with_columns(
+            [
+                pl.col(C.GENDER.value).replace(gender_map).cast(pl.Categorical),
+                pl.col(C.ACCOUNT_STATUS.value).replace(status_map).cast(pl.Categorical),
+                pl.col(C.TRADED_LAST_12_MONTHS.value).replace(traded_map).cast(pl.Categorical),
+            ]
         )
         return df
 
     return _read_and_process_csv(
         filepath,
         column_mapping,
-        date_columns=["Data de Adesao"],
         dtype_mapping=dtype_mapping,
         post_process_func=post_process,
         chunksize=chunksize,
     )
 
 
-def read_operations(
-    filepath: Path, chunksize: Optional[int] = None
-) -> Union[pd.DataFrame, Iterator[pd.DataFrame]]:
+def read_operations(filepath: Path, chunksize: Optional[int] = None) -> Union[pl.DataFrame, Iterator[pl.DataFrame]]:
     """Read operations data (Operações)."""
     column_mapping = {
         "Codigo do Investidor": C.INVESTOR_ID.value,
@@ -188,26 +204,33 @@ def read_operations(
         "Canal da Operacao": C.CHANNEL.value,
     }
 
-    def post_process(df: pd.DataFrame) -> pd.DataFrame:
-        df[C.OPERATION_DATE.value] = pd.to_datetime(df[C.OPERATION_DATE.value])
-        df[C.MATURITY_DATE.value] = pd.to_datetime(df[C.MATURITY_DATE.value])
+    def post_process(df: pl.DataFrame) -> pl.DataFrame:
+        # Parse dates
+        df = df.with_columns(
+            [
+                pl.col(C.OPERATION_DATE.value).str.to_date("%d/%m/%Y"),
+                pl.col(C.MATURITY_DATE.value).str.to_date("%d/%m/%Y"),
+            ]
+        )
+        # Map enum values and cast to categorical
         channel_map = {e.value: e.value for e in Channel}
-        df[C.CHANNEL.value] = df[C.CHANNEL.value].map(channel_map).astype("category")
-        df[C.BOND_TYPE.value] = df[C.BOND_TYPE.value].astype("category")
+        df = df.with_columns(
+            [
+                pl.col(C.CHANNEL.value).replace(channel_map).cast(pl.Categorical),
+                pl.col(C.BOND_TYPE.value).cast(pl.Categorical),
+            ]
+        )
         return df
 
     return _read_and_process_csv(
         filepath,
         column_mapping,
-        date_columns=["Data da Operacao", "Vencimento do Titulo"],
         post_process_func=post_process,
         chunksize=chunksize,
     )
 
 
-def read_sales(
-    filepath: Path, chunksize: Optional[int] = None
-) -> Union[pd.DataFrame, Iterator[pd.DataFrame]]:
+def read_sales(filepath: Path, chunksize: Optional[int] = None) -> Union[pl.DataFrame, Iterator[pl.DataFrame]]:
     """Read sales data (Vendas)."""
     column_mapping = {
         "Tipo Titulo": C.BOND_TYPE.value,
@@ -217,17 +240,24 @@ def read_sales(
         "Quantidade": C.QUANTITY.value,
         "Valor": C.VALUE.value,
     }
+
+    def post_process(df: pl.DataFrame) -> pl.DataFrame:
+        return df.with_columns(
+            [
+                pl.col(C.MATURITY_DATE.value).str.to_date("%d/%m/%Y"),
+                pl.col(C.SALE_DATE.value).str.to_date("%d/%m/%Y"),
+            ]
+        )
+
     return _read_and_process_csv(
         filepath,
         column_mapping,
-        date_columns=["Vencimento do Titulo", "Data Venda"],
+        post_process_func=post_process,
         chunksize=chunksize,
     )
 
 
-def read_buybacks(
-    filepath: Path, chunksize: Optional[int] = None
-) -> Union[pd.DataFrame, Iterator[pd.DataFrame]]:
+def read_buybacks(filepath: Path, chunksize: Optional[int] = None) -> Union[pl.DataFrame, Iterator[pl.DataFrame]]:
     """Read buybacks data (Resgates)."""
     column_mapping = {
         "Tipo Titulo": C.BOND_TYPE.value,
@@ -236,17 +266,24 @@ def read_buybacks(
         "Quantidade": C.QUANTITY.value,
         "Valor": C.VALUE.value,
     }
+
+    def post_process(df: pl.DataFrame) -> pl.DataFrame:
+        return df.with_columns(
+            [
+                pl.col(C.MATURITY_DATE.value).str.to_date("%d/%m/%Y"),
+                pl.col(C.BUYBACK_DATE.value).str.to_date("%d/%m/%Y"),
+            ]
+        )
+
     return _read_and_process_csv(
         filepath,
         column_mapping,
-        date_columns=["Vencimento do Titulo", "Data Resgate"],
+        post_process_func=post_process,
         chunksize=chunksize,
     )
 
 
-def read_maturities(
-    filepath: Path, chunksize: Optional[int] = None
-) -> Union[pd.DataFrame, Iterator[pd.DataFrame]]:
+def read_maturities(filepath: Path, chunksize: Optional[int] = None) -> Union[pl.DataFrame, Iterator[pl.DataFrame]]:
     """Read maturities data (Vencimentos)."""
     column_mapping = {
         "Tipo Titulo": C.BOND_TYPE.value,
@@ -256,17 +293,26 @@ def read_maturities(
         "Quantidade": C.QUANTITY.value,
         "Valor": C.VALUE.value,
     }
+
+    def post_process(df: pl.DataFrame) -> pl.DataFrame:
+        return df.with_columns(
+            [
+                pl.col(C.MATURITY_DATE.value).str.to_date("%d/%m/%Y"),
+                pl.col(C.BUYBACK_DATE.value).str.to_date("%d/%m/%Y"),
+            ]
+        )
+
     return _read_and_process_csv(
         filepath,
         column_mapping,
-        date_columns=["Vencimento do Titulo", "Data Resgate"],
+        post_process_func=post_process,
         chunksize=chunksize,
     )
 
 
 def read_interest_coupons(
     filepath: Path, chunksize: Optional[int] = None
-) -> Union[pd.DataFrame, Iterator[pd.DataFrame]]:
+) -> Union[pl.DataFrame, Iterator[pl.DataFrame]]:
     """Read interest coupons data (Pagamento de Cupom de Juros).
 
     Parses the history of interest coupon payments.
@@ -277,6 +323,6 @@ def read_interest_coupons(
         chunksize: Number of lines to read from the CSV file at a time.
 
     Returns:
-        pd.DataFrame or Iterator[pd.DataFrame]: DataFrame with columns similar to `read_maturities`.
+        pl.DataFrame or Iterator[pl.DataFrame]: DataFrame with columns similar to `read_maturities`.
     """
     return read_maturities(filepath, chunksize=chunksize)

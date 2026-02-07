@@ -14,57 +14,29 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-import functools
-import textwrap
 from typing import Optional
 
-import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
-import pandas as pd
-import seaborn as sns
+import altair as alt
+import polars as pl
 
 from . import analytics
 from .constants import Column as C
 from .constants import Gender
 
 
-def plot_decorator(title: str = "", xlabel: str = "", ylabel: str = ""):
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            f, ax = func(*args, **kwargs)
-            ax.set_title(title)
-            ax.set_xlabel(xlabel)
-            ax.set_ylabel(ylabel)
-            ax.yaxis.set_major_formatter(ticker.FuncFormatter(human_format))
-            _add_footer(f)
-            sns.despine(ax=ax)
-            f.tight_layout()
-            return f, ax
+def plot_prices(data: pl.DataFrame, bond_type: str, variable: str) -> alt.Chart:
+    """Plot bond prices over time by maturity date.
 
-        return wrapper
+    Args:
+        data: Polars DataFrame with prices data
+        bond_type: Bond type to filter
+        variable: Variable to plot (e.g., 'buy_price', 'sell_price')
 
-    return decorator
-
-
-def human_format(num, pos):
+    Returns:
+        Altair Chart object
     """
-    Format large numbers with suffixes (K, M, B, T).
-    Use generic logic for both currency and counts.
-    """
-    magnitude = 0
-    while abs(num) >= 1000:
-        magnitude += 1
-        num /= 1000.0
-    # Add more suffixes if you need
-    suffixes = ["", "K", "M", "B", "T"]
-    if magnitude < len(suffixes):
-        return f"{num:.1f}{suffixes[magnitude]}"
-    return f"{num:.1f}E{magnitude}"
-
-
-def plot_prices(data: pd.DataFrame, bond_type: str, variable: str):
     subset = analytics.prepare_prices(data, bond_type)
+
     variable_description = ""
     if variable == C.BUY_YIELD.value:
         variable_description = "Buy Yield (%)"
@@ -76,276 +48,344 @@ def plot_prices(data: pd.DataFrame, bond_type: str, variable: str):
         variable_description = "Sell Price (R$)"
     elif variable == C.BASE_PRICE.value:
         variable_description = "Base Price (R$)"
-    f, ax = plt.subplots(figsize=(10, 5))
-    sns.lineplot(
-        data=subset,
-        x=C.REFERENCE_DATE.value,
-        y=variable,
-        hue=C.MATURITY_DATE.value,
-        estimator=None,
-        ax=ax,
-        palette="viridis",
-        legend="full",
-        linewidth=1,
+
+    # Format maturity dates for legend
+    subset = subset.with_columns(pl.col(C.MATURITY_DATE.value).dt.strftime("%b/%Y").alias("maturity_formatted"))
+
+    chart = (
+        alt.Chart(subset)
+        .mark_line()
+        .encode(
+            x=alt.X(f"{C.REFERENCE_DATE.value}:T", title="Date"),
+            y=alt.Y(f"{variable}:Q", title=variable_description),
+            color=alt.Color("maturity_formatted:N", title="Maturity"),
+            tooltip=[
+                alt.Tooltip(f"{C.REFERENCE_DATE.value}:T", title="Date"),
+                alt.Tooltip("maturity_formatted:N", title="Maturity"),
+                alt.Tooltip(f"{variable}:Q", title=variable_description, format=",.2f"),
+            ],
+        )
+        .properties(
+            width=800,
+            height=400,
+            title=f"Tesouro Direto | {bond_type} | {variable_description}",
+        )
     )
-    ax.set_title(f"Tesouro Direto | {bond_type} | {variable_description}")
-    ax.set_xlabel("Date")
-    ax.set_ylabel(f"{variable_description}")
 
-    # Format Y axis
-    if "Yield" not in variable_description:
-        ax.yaxis.set_major_formatter(ticker.FuncFormatter(human_format))
-
-    # Legend title and position
-    handles, labels = ax.get_legend_handles_labels()
-
-    # Format the maturity dates in the legend as %b/%Y
-    # Ensure labels are parsed as datetime if they aren't already string-formatted well
-    # But seaborn/matplotlib sometimes return different things in labels depending on version.
-    # We will try to be safe.
-    new_labels = []
-    for label in labels:
-        try:
-            new_labels.append(pd.to_datetime(label).strftime("%b/%Y"))
-        except Exception:
-            new_labels.append(str(label))
-    labels = new_labels
-
-    # If there are more than 10 labels, show only a subset of them
-    n_labels = len(labels)
-    if n_labels > 10:
-        step = n_labels // 10
-        labels = labels[::step]
-        handles = handles[::step]
-
-    ax.legend(
-        handles=handles,
-        labels=labels,
-        title="Maturity",
-        loc="center left",
-        bbox_to_anchor=(1, 0.5),
-    )
-    _add_footer(f)
-    # Grid off
-    sns.despine(ax=ax)
-    f.tight_layout()
-    return f
+    return chart
 
 
-@plot_decorator(
-    title="Tesouro Direto Stock Value Evolution",
-    xlabel="Date",
-    ylabel="Stock Value (R$)",
-)
-def plot_stock(data: pd.DataFrame, by_bond_type: bool = True):
-    """Plot the evolution of the Stock Value."""
-    f, ax = plt.subplots(figsize=(10, 6))
+def plot_stock(data: pl.DataFrame, by_bond_type: bool = True) -> alt.Chart:
+    """Plot the evolution of the Stock Value.
 
+    Args:
+        data: Polars DataFrame with stock data
+        by_bond_type: Whether to split by bond type
+
+    Returns:
+        Altair Chart object
+    """
     df_grouped = analytics.aggregate_stock(data, by_bond_type=by_bond_type)
 
     if by_bond_type:
-        sns.lineplot(
-            data=df_grouped,
-            x=C.STOCK_MONTH.value,
-            y=C.STOCK_VALUE.value,
-            hue=C.BOND_TYPE.value,
-            ax=ax,
+        chart = (
+            alt.Chart(df_grouped)
+            .mark_line()
+            .encode(
+                x=alt.X(f"{C.STOCK_MONTH.value}:T", title="Date"),
+                y=alt.Y(
+                    f"{C.STOCK_VALUE.value}:Q",
+                    title="Stock Value (R$)",
+                    axis=alt.Axis(format="~s"),
+                ),
+                color=alt.Color(f"{C.BOND_TYPE.value}:N", title="Bond Type"),
+                tooltip=[
+                    alt.Tooltip(f"{C.STOCK_MONTH.value}:T", title="Date"),
+                    alt.Tooltip(f"{C.BOND_TYPE.value}:N", title="Bond Type"),
+                    alt.Tooltip(f"{C.STOCK_VALUE.value}:Q", title="Value", format=",.0f"),
+                ],
+            )
         )
-        ax.legend(title="Bond Type")
     else:
-        sns.lineplot(
-            data=df_grouped,
-            x=C.STOCK_MONTH.value,
-            y=C.STOCK_VALUE.value,
-            ax=ax,
+        chart = (
+            alt.Chart(df_grouped)
+            .mark_line()
+            .encode(
+                x=alt.X(f"{C.STOCK_MONTH.value}:T", title="Date"),
+                y=alt.Y(
+                    f"{C.STOCK_VALUE.value}:Q",
+                    title="Stock Value (R$)",
+                    axis=alt.Axis(format="~s"),
+                ),
+                tooltip=[
+                    alt.Tooltip(f"{C.STOCK_MONTH.value}:T", title="Date"),
+                    alt.Tooltip(f"{C.STOCK_VALUE.value}:Q", title="Value", format=",.0f"),
+                ],
+            )
         )
-    return f, ax
+
+    return chart.properties(
+        width=800,
+        height=500,
+        title="Tesouro Direto Stock Value Evolution",
+    )
 
 
 def plot_investors_demographics(
-    data: pd.DataFrame,
+    data: pl.DataFrame,
     column: str = C.STATE.value,
     top_n: int = 15,
     chart_type: str = "bar",
-):
-    """Plot distribution of investors by a categorical column (State, Gender, etc)."""
-    f, ax = plt.subplots(figsize=(10, 6))
+) -> alt.Chart:
+    """Plot distribution of investors by a categorical column.
 
-    counts = analytics.prepare_demographics_counts(data, column, top_n)
+    Args:
+        data: Polars DataFrame with investor data
+        column: Column to analyze (e.g., 'state', 'gender', 'age')
+        top_n: Number of top categories to show
+        chart_type: Type of chart ('bar', 'barh', or 'pie')
+
+    Returns:
+        Altair Chart object
+    """
+    counts_df = analytics.prepare_demographics_counts(data, column, top_n)
     human_col = _humanize_label(column)
 
-    # Plot based on chart type
     if chart_type == "pie":
-        _plot_demographics_pie(ax, counts)
+        chart = (
+            alt.Chart(counts_df)
+            .mark_arc()
+            .encode(
+                theta=alt.Theta("count:Q"),
+                color=alt.Color(f"{column}:N", title=human_col),
+                tooltip=[
+                    alt.Tooltip(f"{column}:N", title=human_col),
+                    alt.Tooltip("count:Q", title="Count", format=","),
+                ],
+            )
+        )
     elif chart_type == "barh":
-        _plot_demographics_barh(ax, counts, human_col)
-    else:
-        _plot_demographics_bar(ax, counts, human_col, column)
+        chart = (
+            alt.Chart(counts_df)
+            .mark_bar()
+            .encode(
+                x=alt.X("count:Q", title="Count", axis=alt.Axis(format="~s")),
+                y=alt.Y(f"{column}:N", title=human_col, sort="-x"),
+                color=alt.Color(f"{column}:N", legend=None),
+                tooltip=[
+                    alt.Tooltip(f"{column}:N", title=human_col),
+                    alt.Tooltip("count:Q", title="Count", format=","),
+                ],
+            )
+        )
+    else:  # bar
+        chart = (
+            alt.Chart(counts_df)
+            .mark_bar()
+            .encode(
+                x=alt.X(f"{column}:N", title=human_col, sort="-y"),
+                y=alt.Y("count:Q", title="Count", axis=alt.Axis(format="~s")),
+                color=alt.Color(f"{column}:N", legend=None),
+                tooltip=[
+                    alt.Tooltip(f"{column}:N", title=human_col),
+                    alt.Tooltip("count:Q", title="Count", format=","),
+                ],
+            )
+        )
 
-    ax.set_title(f"Investors Distribution by {human_col}")
-    _add_footer(f)
-    f.tight_layout()
-    return f
-
-
-def _plot_demographics_pie(ax, counts: pd.Series):
-    """Plot demographics data as a pie chart."""
-    ax.pie(
-        counts.values,
-        labels=counts.index,
-        autopct="%1.1f%%",
-        startangle=90,
-        colors=sns.color_palette("viridis", len(counts)),
+    return chart.properties(
+        width=800,
+        height=500,
+        title=f"Investors Distribution by {human_col}",
     )
-    # Equal aspect ratio ensures that pie is drawn as a circle.
-    ax.axis("equal")
 
 
-def _plot_demographics_barh(ax, counts: pd.Series, human_col: str):
-    """Plot demographics data as a horizontal bar chart."""
-    sns.barplot(
-        x=counts.values,
-        y=counts.index,
-        hue=counts.index,
-        palette="viridis",
-        legend=False,
-        ax=ax,
-    )
-    ax.set_xlabel("Count")
-    ax.set_ylabel(human_col)
-    ax.xaxis.set_major_formatter(ticker.FuncFormatter(human_format))
+def plot_investors_population_pyramid(data: pl.DataFrame) -> alt.Chart:
+    """Plot a population pyramid showing age distribution by gender.
 
-    # Wrap long labels
-    max_width = 30
-    new_labels = [textwrap.fill(str(label), width=max_width) for label in counts.index]
-    ax.set_yticks(range(len(counts)))
-    ax.set_yticklabels(new_labels)
+    Args:
+        data: Polars DataFrame with investor data including age and gender
 
-    sns.despine(ax=ax)
-
-
-def _plot_demographics_bar(ax, counts: pd.Series, human_col: str, column: str):
-    """Plot demographics data as a vertical bar chart."""
-    sns.barplot(
-        x=counts.index,
-        y=counts.values,
-        hue=counts.index,
-        palette="viridis",
-        legend=False,
-        ax=ax,
-    )
-    ax.set_ylabel("Count")
-    ax.set_xlabel(human_col)
-    ax.yaxis.set_major_formatter(ticker.FuncFormatter(human_format))
-
-    # For age, limit the number of x-axis ticks to avoid overcrowding
-    if column == C.AGE.value:
-        ax.xaxis.set_major_locator(ticker.MaxNLocator(nbins=20, integer=True))
-
-    plt.xticks(rotation=45)
-    sns.despine(ax=ax)
-
-
-def plot_investors_population_pyramid(data: pd.DataFrame):
-    """Plot a population pyramid showing age distribution by gender."""
-
+    Returns:
+        Altair Chart object
+    """
     pivoted = analytics.prepare_population_pyramid(data)
 
-    # Get labels for male and female (handle missing genders gracefully)
+    # Get labels for male and female
     male_label = Gender.get_labels()[Gender.MALE.value]
     female_label = Gender.get_labels()[Gender.FEMALE.value]
 
-    # Create the plot
-    f, ax = plt.subplots(figsize=(10, 8))
-
-    y_pos = range(len(pivoted))
-
-    # Plot males on the left (negative values)
+    # Reshape for altair - need long format
     if male_label in pivoted.columns:
-        ax.barh(
-            y_pos,
-            -pivoted[male_label],
-            height=0.8,
-            label=male_label,
-            color="steelblue",
+        male_data = pivoted.select(
+            [
+                pl.col("age_group"),
+                pl.col(male_label).alias("count"),
+            ]
+        ).with_columns(
+            pl.lit(male_label).alias("gender"),
+            (pl.col("count") * -1).cast(pl.Int64).alias("count"),  # Negative for left side
+        )
+    else:
+        male_data = pl.DataFrame(
+            {
+                "age_group": pl.Series([], dtype=pl.String),
+                "count": pl.Series([], dtype=pl.Int64),
+                "gender": pl.Series([], dtype=pl.String),
+            }
         )
 
-    # Plot females on the right (positive values)
     if female_label in pivoted.columns:
-        ax.barh(
-            y_pos,
-            pivoted[female_label],
-            height=0.8,
-            label=female_label,
-            color="coral",
+        female_data = pivoted.select(
+            [
+                pl.col("age_group"),
+                pl.col(female_label).alias("count"),
+            ]
+        ).with_columns(
+            pl.lit(female_label).alias("gender"),
+            pl.col("count").cast(pl.Int64).alias("count"),
+        )
+    else:
+        female_data = pl.DataFrame(
+            {
+                "age_group": pl.Series([], dtype=pl.String),
+                "count": pl.Series([], dtype=pl.Int64),
+                "gender": pl.Series([], dtype=pl.String),
+            }
         )
 
-    # Customize the plot
-    ax.set_yticks(y_pos)
-    ax.set_yticklabels(pivoted.index)
-    ax.set_xlabel("Number of Investors")
-    ax.set_ylabel("Age Group")
-    ax.set_title("Investors Population Pyramid by Age and Gender")
+    combined = pl.concat([male_data, female_data])
 
-    # Format x-axis to show absolute values
-    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: human_format(abs(x), pos)))
+    chart = (
+        alt.Chart(combined)
+        .mark_bar()
+        .encode(
+            y=alt.Y("age_group:N", title="Age Group", sort=None),
+            x=alt.X(
+                "count:Q",
+                title="Number of Investors",
+                axis=alt.Axis(format="s"),
+            ),
+            color=alt.Color("gender:N", title="Gender"),
+            tooltip=[
+                alt.Tooltip("age_group:N", title="Age Group"),
+                alt.Tooltip("gender:N", title="Gender"),
+                alt.Tooltip("count:Q", title="Count", format=","),
+            ],
+        )
+        .properties(
+            width=800,
+            height=600,
+            title="Investors Population Pyramid by Age and Gender",
+        )
+    )
 
-    # Add vertical line at zero
-    ax.axvline(0, color="black", linewidth=0.8)
-
-    # Add legend
-    ax.legend(loc="upper right")
-
-    # Remove top and right spines
-    sns.despine(ax=ax)
-
-    _add_footer(f)
-    f.tight_layout()
-    return f
+    return chart
 
 
-@plot_decorator(
-    title="New Investors Over Time",
-    xlabel="Date",
-    ylabel="Number of New Investors",
-)
-def plot_investors_evolution(data: pd.DataFrame, freq: str = "ME"):
-    """Plot the number of new investors over time."""
-    f, ax = plt.subplots(figsize=(10, 6))
+def plot_investors_evolution(data: pl.DataFrame, freq: str = "1mo") -> alt.Chart:
+    """Plot the number of new investors over time.
 
+    Args:
+        data: Polars DataFrame with investor join dates
+        freq: Frequency for aggregation (e.g., '1mo', '1w')
+
+    Returns:
+        Altair Chart object
+    """
     resampled = analytics.aggregate_new_investors(data, freq)
 
-    sns.lineplot(data=resampled, x=C.JOIN_DATE.value, y="new_investors", ax=ax)
-    return f, ax
+    chart = (
+        alt.Chart(resampled)
+        .mark_line()
+        .encode(
+            x=alt.X(f"{C.JOIN_DATE.value}:T", title="Date"),
+            y=alt.Y(
+                "new_investors:Q",
+                title="Number of New Investors",
+                axis=alt.Axis(format="~s"),
+            ),
+            tooltip=[
+                alt.Tooltip(f"{C.JOIN_DATE.value}:T", title="Date"),
+                alt.Tooltip("new_investors:Q", title="New Investors", format=","),
+            ],
+        )
+        .properties(
+            width=800,
+            height=500,
+            title="New Investors Over Time",
+        )
+    )
+
+    return chart
 
 
-@plot_decorator(
-    title="Operations Volume Over Time",
-    xlabel="Date",
-    ylabel="Total Value (R$)",
-)
-def plot_operations(data: pd.DataFrame, by_type: bool = True):
-    """Plot operations value over time."""
-    f, ax = plt.subplots(figsize=(10, 6))
+def plot_operations(data: pl.DataFrame, by_type: bool = True) -> alt.Chart:
+    """Plot operations volume over time.
 
+    Args:
+        data: Polars DataFrame with operations data
+        by_type: Whether to split by operation type
+
+    Returns:
+        Altair Chart object
+    """
     grouped = analytics.aggregate_operations(data, by_type)
 
     if by_type:
-        sns.lineplot(
-            data=grouped,
-            x="month",
-            y=C.OPERATION_VALUE.value,
-            hue=C.OPERATION_TYPE.value,
-            ax=ax,
+        chart = (
+            alt.Chart(grouped)
+            .mark_line()
+            .encode(
+                x=alt.X("month:T", title="Date"),
+                y=alt.Y(
+                    f"{C.OPERATION_VALUE.value}:Q",
+                    title="Total Value (R$)",
+                    axis=alt.Axis(format="~s"),
+                ),
+                color=alt.Color(f"{C.OPERATION_TYPE.value}:N", title="Operation Type"),
+                tooltip=[
+                    alt.Tooltip("month:T", title="Date"),
+                    alt.Tooltip(f"{C.OPERATION_TYPE.value}:N", title="Type"),
+                    alt.Tooltip(f"{C.OPERATION_VALUE.value}:Q", title="Value", format=",.0f"),
+                ],
+            )
         )
-        ax.legend(title="Operation Type")
     else:
-        sns.lineplot(data=grouped, x="month", y=C.OPERATION_VALUE.value, ax=ax)
-    return f, ax
+        chart = (
+            alt.Chart(grouped)
+            .mark_line()
+            .encode(
+                x=alt.X("month:T", title="Date"),
+                y=alt.Y(
+                    f"{C.OPERATION_VALUE.value}:Q",
+                    title="Total Value (R$)",
+                    axis=alt.Axis(format="~s"),
+                ),
+                tooltip=[
+                    alt.Tooltip("month:T", title="Date"),
+                    alt.Tooltip(f"{C.OPERATION_VALUE.value}:Q", title="Value", format=",.0f"),
+                ],
+            )
+        )
+
+    return chart.properties(
+        width=800,
+        height=500,
+        title="Operations Volume Over Time",
+    )
 
 
-def plot_sales(data: pd.DataFrame, by_bond_type: bool = True):
-    """Plot sales value over time."""
+def plot_sales(data: pl.DataFrame, by_bond_type: bool = True) -> alt.Chart:
+    """Plot sales value over time.
+
+    Args:
+        data: Polars DataFrame with sales data
+        by_bond_type: Whether to split by bond type
+
+    Returns:
+        Altair Chart object
+    """
     return _plot_value_over_time(
         data,
         date_col=C.SALE_DATE.value,
@@ -356,8 +396,16 @@ def plot_sales(data: pd.DataFrame, by_bond_type: bool = True):
     )
 
 
-def plot_buybacks(data: pd.DataFrame, by_bond_type: bool = True):
-    """Plot buybacks (redemptions) value over time."""
+def plot_buybacks(data: pl.DataFrame, by_bond_type: bool = True) -> alt.Chart:
+    """Plot buybacks (redemptions) value over time.
+
+    Args:
+        data: Polars DataFrame with buyback data
+        by_bond_type: Whether to split by bond type
+
+    Returns:
+        Altair Chart object
+    """
     return _plot_value_over_time(
         data,
         date_col=C.BUYBACK_DATE.value,
@@ -368,11 +416,19 @@ def plot_buybacks(data: pd.DataFrame, by_bond_type: bool = True):
     )
 
 
-def plot_maturities(data: pd.DataFrame, by_bond_type: bool = True):
-    """Plot maturities value over time."""
+def plot_maturities(data: pl.DataFrame, by_bond_type: bool = True) -> alt.Chart:
+    """Plot maturities value over time.
+
+    Args:
+        data: Polars DataFrame with maturities data
+        by_bond_type: Whether to split by bond type
+
+    Returns:
+        Altair Chart object
+    """
     return _plot_value_over_time(
         data,
-        date_col=C.BUYBACK_DATE.value,  # Maturities file uses 'Data Resgate' -> BUYBACK_DATE/REDEMPTION_DATE
+        date_col=C.BUYBACK_DATE.value,
         value_col=C.VALUE.value,
         title="Maturities Volume Over Time",
         hue_col=C.BOND_TYPE.value if by_bond_type else None,
@@ -380,11 +436,19 @@ def plot_maturities(data: pd.DataFrame, by_bond_type: bool = True):
     )
 
 
-def plot_interest_coupons(data: pd.DataFrame, by_bond_type: bool = True):
-    """Plot interest coupons payments value over time."""
+def plot_interest_coupons(data: pl.DataFrame, by_bond_type: bool = True) -> alt.Chart:
+    """Plot interest coupons payments value over time.
+
+    Args:
+        data: Polars DataFrame with interest coupon data
+        by_bond_type: Whether to split by bond type
+
+    Returns:
+        Altair Chart object
+    """
     return _plot_value_over_time(
         data,
-        date_col=C.BUYBACK_DATE.value,  # Interest coupons file uses 'Data Resgate' similar to maturities
+        date_col=C.BUYBACK_DATE.value,
         value_col=C.VALUE.value,
         title="Interest Coupons Payments Over Time",
         hue_col=C.BOND_TYPE.value if by_bond_type else None,
@@ -392,41 +456,75 @@ def plot_interest_coupons(data: pd.DataFrame, by_bond_type: bool = True):
     )
 
 
-@plot_decorator()
 def _plot_value_over_time(
-    data: pd.DataFrame,
+    data: pl.DataFrame,
     date_col: str,
     value_col: str,
     title: str,
     hue_col: Optional[str] = None,
     legend_title: Optional[str] = None,
-):
-    f, ax = plt.subplots(figsize=(10, 6))
+) -> alt.Chart:
+    """Helper function to plot values over time.
 
+    Args:
+        data: Polars DataFrame
+        date_col: Name of date column
+        value_col: Name of value column
+        title: Chart title
+        hue_col: Column to use for color encoding (optional)
+        legend_title: Title for legend (optional)
+
+    Returns:
+        Altair Chart object
+    """
     grouped = analytics.aggregate_value_over_time(
         data, date_col, value_col, group_col=hue_col
     )
 
     if hue_col:
-        sns.lineplot(data=grouped, x="month", y=value_col, hue=hue_col, ax=ax)
-        if legend_title:
-            ax.legend(title=legend_title)
+        chart = (
+            alt.Chart(grouped)
+            .mark_line()
+            .encode(
+                x=alt.X("month:T", title="Date"),
+                y=alt.Y(
+                    f"{value_col}:Q",
+                    title="Total Value (R$)",
+                    axis=alt.Axis(format="~s"),
+                ),
+                color=alt.Color(f"{hue_col}:N", title=legend_title or hue_col),
+                tooltip=[
+                    alt.Tooltip("month:T", title="Date"),
+                    alt.Tooltip(f"{hue_col}:N", title=legend_title or hue_col),
+                    alt.Tooltip(f"{value_col}:Q", title="Value", format=",.0f"),
+                ],
+            )
+        )
     else:
-        sns.lineplot(data=grouped, x="month", y=value_col, ax=ax)
+        chart = (
+            alt.Chart(grouped)
+            .mark_line()
+            .encode(
+                x=alt.X("month:T", title="Date"),
+                y=alt.Y(
+                    f"{value_col}:Q",
+                    title="Total Value (R$)",
+                    axis=alt.Axis(format="~s"),
+                ),
+                tooltip=[
+                    alt.Tooltip("month:T", title="Date"),
+                    alt.Tooltip(f"{value_col}:Q", title="Value", format=",.0f"),
+                ],
+            )
+        )
 
-    return f, ax
-
-
-def _add_footer(fig):
-    fig.text(
-        0.01,
-        0.01,
-        "Data source: Tesouro Direto",
-        horizontalalignment="left",
-        fontsize=8,
-        color="gray",
+    return chart.properties(
+        width=800,
+        height=500,
+        title=title,
     )
 
 
 def _humanize_label(label: str) -> str:
+    """Convert snake_case to Title Case."""
     return label.replace("_", " ").title()
