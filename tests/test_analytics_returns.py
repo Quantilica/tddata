@@ -30,6 +30,10 @@ from tddata.analytics import (
 )
 from tddata.constants import Column as C
 
+# Bond types that pay semiannual coupons
+BOND_IPCA_JS = "Tesouro IPCA+ com Juros Semestrais"
+BOND_PREFIXED_JS = "Tesouro Prefixado com Juros Semestrais"
+
 
 class TestSimpleReturn(unittest.TestCase):
     """Test simple return calculations."""
@@ -234,6 +238,124 @@ class TestOperationsReturns(unittest.TestCase):
         self.assertTrue("holding_days" in result.columns)
         self.assertTrue((result["holding_days"] > 0).all())
 
+    def test_zero_bond_value_filtered(self):
+        """Test that operations with zero bond value are filtered out."""
+        ops_with_zero = pd.concat(
+            [
+                self.operations,
+                pd.DataFrame(
+                    {
+                        C.OPERATION_DATE.value: pd.to_datetime(["2024-03-01"]),
+                        C.BOND_TYPE.value: ["Tesouro Selic"],
+                        C.MATURITY_DATE.value: pd.to_datetime(["2030-01-01"]),
+                        C.QUANTITY.value: [5.0],
+                        C.BOND_VALUE.value: [0.0],
+                        C.OPERATION_VALUE.value: [0.0],
+                        C.OPERATION_TYPE.value: ["C"],
+                    }
+                ),
+            ],
+            ignore_index=True,
+        )
+
+        current_date = pd.Timestamp("2024-12-31")
+        result = calculate_operations_returns(ops_with_zero, self.prices, current_date=current_date)
+
+        # Should have 2 buys (zero bond_value row filtered out)
+        self.assertEqual(len(result), 2)
+
+    def test_coupon_income_in_returns(self):
+        """Test that coupon income is included in return calculations."""
+        # Create operations for a bond with semiannual interest
+        operations = pd.DataFrame(
+            {
+                C.OPERATION_DATE.value: pd.to_datetime(["2024-01-15"]),
+                C.BOND_TYPE.value: [BOND_IPCA_JS],
+                C.MATURITY_DATE.value: pd.to_datetime(["2035-05-15"]),
+                C.QUANTITY.value: [10.0],
+                C.BOND_VALUE.value: [1000.0],
+                C.OPERATION_VALUE.value: [10000.0],
+                C.OPERATION_TYPE.value: ["C"],
+            }
+        )
+
+        prices = pd.DataFrame(
+            {
+                C.REFERENCE_DATE.value: pd.to_datetime(["2024-12-31"]),
+                C.BOND_TYPE.value: [BOND_IPCA_JS],
+                C.MATURITY_DATE.value: pd.to_datetime(["2035-05-15"]),
+                C.SELL_PRICE.value: [970.0],  # Price dropped after coupon
+            }
+        )
+
+        coupons = pd.DataFrame(
+            {
+                C.BOND_TYPE.value: [BOND_IPCA_JS],
+                C.MATURITY_DATE.value: pd.to_datetime(["2035-05-15"]),
+                C.BUYBACK_DATE.value: pd.to_datetime(["2024-07-01"]),
+                C.UNIT_PRICE.value: [30.0],  # ~3% semiannual coupon
+                C.QUANTITY.value: [100000.0],  # aggregate (not used in calc)
+                C.VALUE.value: [3000000.0],  # aggregate (not used in calc)
+            }
+        )
+
+        current_date = pd.Timestamp("2024-12-31")
+
+        # Without coupons
+        result_no_coupon = calculate_operations_returns(operations, prices, current_date=current_date)
+        # end_value = 10 * 970 = 9700, return = (9700/10000 - 1)*100 = -3%
+        self.assertAlmostEqual(result_no_coupon.iloc[0]["simple_return"], -3.0, places=1)
+
+        # With coupons
+        result_with_coupon = calculate_operations_returns(
+            operations, prices, current_date=current_date, coupons=coupons
+        )
+        # end_value = 9700 + (10 * 30) = 10000, return = 0%
+        self.assertAlmostEqual(result_with_coupon.iloc[0]["simple_return"], 0.0, places=1)
+        self.assertAlmostEqual(result_with_coupon.iloc[0]["total_coupons"], 300.0, places=1)
+
+    def test_coupon_only_within_holding_period(self):
+        """Test that only coupons within the holding period are counted."""
+        operations = pd.DataFrame(
+            {
+                C.OPERATION_DATE.value: pd.to_datetime(["2024-04-01", "2024-09-15"]),
+                C.BOND_TYPE.value: [BOND_IPCA_JS, BOND_IPCA_JS],
+                C.MATURITY_DATE.value: pd.to_datetime(["2035-05-15", "2035-05-15"]),
+                C.QUANTITY.value: [10.0, -10.0],
+                C.BOND_VALUE.value: [1000.0, 1020.0],
+                C.OPERATION_VALUE.value: [10000.0, 10200.0],
+                C.OPERATION_TYPE.value: ["C", "V"],
+            }
+        )
+
+        prices = pd.DataFrame(
+            {
+                C.REFERENCE_DATE.value: pd.to_datetime(["2024-12-31"]),
+                C.BOND_TYPE.value: [BOND_IPCA_JS],
+                C.MATURITY_DATE.value: pd.to_datetime(["2035-05-15"]),
+                C.SELL_PRICE.value: [1050.0],
+            }
+        )
+
+        # Two coupons: one before buy (should be excluded), one during hold
+        coupons = pd.DataFrame(
+            {
+                C.BOND_TYPE.value: [BOND_IPCA_JS, BOND_IPCA_JS],
+                C.MATURITY_DATE.value: pd.to_datetime(["2035-05-15", "2035-05-15"]),
+                C.BUYBACK_DATE.value: pd.to_datetime(["2024-01-01", "2024-07-01"]),
+                C.UNIT_PRICE.value: [30.0, 30.0],
+                C.QUANTITY.value: [100000.0, 100000.0],
+                C.VALUE.value: [3000000.0, 3000000.0],
+            }
+        )
+
+        current_date = pd.Timestamp("2024-12-31")
+        result = calculate_operations_returns(operations, prices, current_date=current_date, coupons=coupons)
+
+        # Only the July coupon should be counted (buy was April, sell was Sep)
+        # total_coupons = 10 * 30 = 300
+        self.assertAlmostEqual(result.iloc[0]["total_coupons"], 300.0, places=1)
+
 
 class TestPortfolioMonthlyReturns(unittest.TestCase):
     """Test portfolio monthly return calculations."""
@@ -334,6 +456,121 @@ class TestPortfolioMonthlyReturns(unittest.TestCase):
         # March should have negative cash flow (sell)
         mar_row = result[result["month"] == "2024-03-01"]
         self.assertLess(mar_row.iloc[0]["net_cash_flow"], 0)
+
+    def test_zero_bond_value_filtered_portfolio(self):
+        """Test that operations with zero bond value are filtered out."""
+        ops_with_zero = pd.concat(
+            [
+                self.operations,
+                pd.DataFrame(
+                    {
+                        C.OPERATION_DATE.value: pd.to_datetime(["2024-02-01"]),
+                        C.BOND_TYPE.value: ["Tesouro Selic"],
+                        C.MATURITY_DATE.value: pd.to_datetime(["2030-01-01"]),
+                        C.QUANTITY.value: [3.0],
+                        C.BOND_VALUE.value: [0.0],
+                        C.OPERATION_VALUE.value: [0.0],
+                        C.OPERATION_TYPE.value: ["C"],
+                    }
+                ),
+            ],
+            ignore_index=True,
+        )
+
+        result = calculate_portfolio_monthly_returns(
+            ops_with_zero,
+            self.prices,
+            start_date=pd.Timestamp("2024-01-01"),
+            end_date=pd.Timestamp("2024-04-30"),
+        )
+
+        # Should still produce 4 months of returns
+        self.assertEqual(len(result), 4)
+
+        # February cash flow should be from the real buy only (5250), not the zero one
+        feb_row = result[result["month"] == "2024-02-01"]
+        self.assertAlmostEqual(feb_row.iloc[0]["net_cash_flow"], 5250.0, places=1)
+
+    def test_coupon_as_distribution_portfolio(self):
+        """Test that coupons are treated as distributions in portfolio returns."""
+        # Single buy of IPCA+ com Juros Semestrais
+        operations = pd.DataFrame(
+            {
+                C.OPERATION_DATE.value: pd.to_datetime(["2024-01-15"]),
+                C.BOND_TYPE.value: [BOND_IPCA_JS],
+                C.MATURITY_DATE.value: pd.to_datetime(["2035-05-15"]),
+                C.QUANTITY.value: [10.0],
+                C.BOND_VALUE.value: [1000.0],
+                C.OPERATION_VALUE.value: [10000.0],
+                C.OPERATION_TYPE.value: ["C"],
+            }
+        )
+
+        # Prices: stable at 1000, then drops to 970 in July (coupon effect)
+        prices = pd.DataFrame(
+            {
+                C.REFERENCE_DATE.value: pd.to_datetime(
+                    [
+                        "2024-01-31",
+                        "2024-02-29",
+                        "2024-03-31",
+                        "2024-04-30",
+                        "2024-05-31",
+                        "2024-06-30",
+                        "2024-07-31",
+                    ]
+                ),
+                C.BOND_TYPE.value: [BOND_IPCA_JS] * 7,
+                C.MATURITY_DATE.value: pd.to_datetime(["2035-05-15"] * 7),
+                C.SELL_PRICE.value: [1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 1030.0, 1000.0],
+            }
+        )
+
+        # Coupon payment in July
+        coupons = pd.DataFrame(
+            {
+                C.BOND_TYPE.value: [BOND_IPCA_JS],
+                C.MATURITY_DATE.value: pd.to_datetime(["2035-05-15"]),
+                C.BUYBACK_DATE.value: pd.to_datetime(["2024-07-01"]),
+                C.UNIT_PRICE.value: [30.0],
+                C.QUANTITY.value: [100000.0],
+                C.VALUE.value: [3000000.0],
+            }
+        )
+
+        # With coupons
+        result_with = calculate_portfolio_monthly_returns(
+            operations,
+            prices,
+            start_date=pd.Timestamp("2024-01-01"),
+            end_date=pd.Timestamp("2024-07-31"),
+            coupons=coupons,
+        )
+
+        # Without coupons
+        result_without = calculate_portfolio_monthly_returns(
+            operations,
+            prices,
+            start_date=pd.Timestamp("2024-01-01"),
+            end_date=pd.Timestamp("2024-07-31"),
+        )
+
+        # July should have a coupon distribution in net_cash_flow
+        july_with = result_with[result_with["month"] == "2024-07-01"]
+        july_without = result_without[result_without["month"] == "2024-07-01"]
+
+        # With coupons, net_cash_flow should be negative (distribution)
+        self.assertLess(july_with.iloc[0]["net_cash_flow"], 0)
+
+        # Without coupons, net_cash_flow should be zero (no operations in July)
+        self.assertAlmostEqual(july_without.iloc[0]["net_cash_flow"], 0.0, places=1)
+
+        # The coupon-adjusted return should be higher than without
+        # (because without coupons, the price drop looks like a loss)
+        self.assertGreater(
+            july_with.iloc[0]["monthly_return"],
+            july_without.iloc[0]["monthly_return"],
+        )
 
 
 if __name__ == "__main__":

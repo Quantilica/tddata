@@ -14,6 +14,8 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
+from typing import Optional
+
 import pandas as pd
 
 from .constants import (
@@ -41,7 +43,6 @@ def prepare_prices(data: pd.DataFrame, bond_type: str) -> pd.DataFrame:
     # Sort the data by maturity date
     subset = subset.sort_values(by=[C.MATURITY_DATE.value, C.REFERENCE_DATE.value])
     return subset
-
 
 
 def prepare_demographics_counts(
@@ -269,11 +270,13 @@ def calculate_operations_returns(
     operations: pd.DataFrame,
     prices: pd.DataFrame,
     current_date: pd.Timestamp | None = None,
+    coupons: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """Calculate returns for individual operations (buy/sell pairs).
 
     This function matches buy operations with their corresponding sell operations
     and calculates returns. For open positions, it uses current prices.
+    Supports semiannual coupon payments for bonds with "Juros Semestrais".
 
     Args:
         operations: DataFrame with columns: operation_date, bond_type, maturity_date,
@@ -281,6 +284,9 @@ def calculate_operations_returns(
         prices: DataFrame with columns: reference_date, bond_type, maturity_date,
             sell_price.
         current_date: Date to calculate returns as of (defaults to today).
+        coupons: DataFrame with coupon payment data (from read_interest_coupons).
+            Expected columns: bond_type, maturity_date, buyback_date, unit_price.
+            If provided, coupon income is included in return calculations.
 
     Returns:
         DataFrame with buy operations and calculated returns.
@@ -307,6 +313,9 @@ def calculate_operations_returns(
         current_date = pd.Timestamp.now().normalize()
 
     df = operations.copy()
+
+    # Filter out rows with zero bond value
+    df = df[df[C.BOND_VALUE.value] > 0].copy()
 
     # Separate buys and sells
     is_buy = df[C.OPERATION_TYPE.value].isin(["C", "D", "buy"])
@@ -374,9 +383,39 @@ def calculate_operations_returns(
         )
         buys.drop(columns=["month", C.SELL_PRICE.value], inplace=True, errors="ignore")
 
-    # Calculate returns
+    # Calculate coupon income per lot
+    buys["total_coupons"] = 0.0
+    if coupons is not None and not coupons.empty:
+        for buy_idx, buy_row in buys.iterrows():
+            bond_coupons = coupons[
+                (coupons[C.BOND_TYPE.value] == buy_row[C.BOND_TYPE.value])
+                & (coupons[C.MATURITY_DATE.value] == buy_row[C.MATURITY_DATE.value])
+            ]
+            if bond_coupons.empty:
+                continue
+
+            # Filter coupons within holding period
+            buy_date = buy_row[C.OPERATION_DATE.value]
+            end_date = (
+                buy_row["sell_date"]
+                if buy_row["status"] == "closed" and pd.notna(buy_row["sell_date"])
+                else current_date
+            )
+            period_coupons = bond_coupons[
+                (bond_coupons[C.BUYBACK_DATE.value] >= buy_date) & (bond_coupons[C.BUYBACK_DATE.value] <= end_date)
+            ]
+            if not period_coupons.empty:
+                total_coupon_per_unit = period_coupons[C.UNIT_PRICE.value].sum()
+                buys.loc[buy_idx, "total_coupons"] = buy_row[C.QUANTITY.value] * total_coupon_per_unit
+
+    # Calculate returns (including coupon income)
     buys["end_value"] = buys.apply(
-        lambda row: row["sell_value"] if row["status"] == "closed" else row["current_value"], axis=1
+        lambda row: (
+            (row["sell_value"] + row["total_coupons"])
+            if row["status"] == "closed"
+            else (row["current_value"] + row["total_coupons"])
+        ),
+        axis=1,
     )
 
     buys["simple_return"] = calculate_simple_return(buys["end_value"], buys[C.OPERATION_VALUE.value])
@@ -393,11 +432,14 @@ def calculate_portfolio_monthly_returns(
     prices: pd.DataFrame,
     start_date: pd.Timestamp | None = None,
     end_date: pd.Timestamp | None = None,
+    coupons: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """Calculate monthly portfolio returns using Modified Dietz method.
 
     The Modified Dietz method properly accounts for cash flows by time-weighting
     them based on when they occur during the period.
+    Supports semiannual coupon payments for bonds with "Juros Semestrais".
+    Coupons are treated as distributions (negative cash flows).
 
     Args:
         operations: DataFrame with operation_date, bond_type, maturity_date,
@@ -406,6 +448,10 @@ def calculate_portfolio_monthly_returns(
             sell_price columns.
         start_date: Start date for calculations (defaults to first operation).
         end_date: End date (defaults to today).
+        coupons: DataFrame with coupon payment data (from read_interest_coupons).
+            Expected columns: bond_type, maturity_date, buyback_date, unit_price.
+            If provided, coupons are treated as distributions in the Modified
+            Dietz formula.
 
     Returns:
         DataFrame with monthly returns and cumulative returns.
@@ -414,6 +460,12 @@ def calculate_portfolio_monthly_returns(
         >>> # See calculate_operations_returns for data structure
         >>> monthly_returns = calculate_portfolio_monthly_returns(operations, prices)
     """
+    if operations.empty:
+        return pd.DataFrame()
+
+    # Filter out rows with zero bond value
+    operations = operations[operations[C.BOND_VALUE.value] > 0].copy()
+
     if operations.empty:
         return pd.DataFrame()
 
@@ -485,6 +537,21 @@ def calculate_portfolio_monthly_returns(
                 # Update position
                 if bond_key in positions:
                     positions[bond_key]["quantity"] += op[C.QUANTITY.value]  # negative quantity
+
+        # Process coupon payments in this month
+        if coupons is not None and not coupons.empty and positions:
+            month_coupons = coupons[
+                (coupons[C.BUYBACK_DATE.value] >= month_start) & (coupons[C.BUYBACK_DATE.value] <= month_end)
+            ]
+            for _, coupon_row in month_coupons.iterrows():
+                coupon_key = (coupon_row[C.BOND_TYPE.value], coupon_row[C.MATURITY_DATE.value])
+                if coupon_key in positions and positions[coupon_key]["quantity"] > 0:
+                    coupon_amount = positions[coupon_key]["quantity"] * coupon_row[C.UNIT_PRICE.value]
+                    # Treat coupon as a distribution (negative cash flow)
+                    days_remaining = (month_end - coupon_row[C.BUYBACK_DATE.value]).days
+                    weight = days_remaining / total_days if total_days > 0 else 0.0
+                    net_cash_flow -= coupon_amount
+                    weighted_cash_flow -= coupon_amount * weight
 
         # Calculate portfolio value at end of month
         emv = 0.0  # Ending Market Value
