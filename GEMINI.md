@@ -53,7 +53,7 @@ The project is structured into several modules:
 
 - **Core Dependencies**: `httpx` for HTTP requests and `tqdm` for progress bars.
 - **Optional (`analysis`) Dependencies**: `pandas`, `pyarrow`, `seaborn` for data analysis and plotting.
-- **Installation**: The project is installed in editable mode. The full installation for development is `pip install -e .[analysis]`.
+- **Installation**: The project is installed in editable mode. The full installation for development is `pip install -e .[analysis]`. The project uses `uv` for package management. Use `uv add` to add new dependencies. Use `uv run` to run scripts.
 - **Testing**: Tests are located in the `tests/` directory and are run using the `unittest` framework. The command to run all tests is `python -m unittest discover -s tests -p "test_*.py"`. The CI pipeline in `.github/workflows/run-tests.yml` shows the full setup and test execution process.
 
 ## 5. How to Work with the Codebase
