@@ -4,7 +4,7 @@ This document describes the return calculation functions added to the tddata pac
 
 ## Overview
 
-The return calculation functions in `tddata.analytics` provide pandas-friendly implementations of:
+The return calculation functions in `tddata.analytics` provide Polars-friendly implementations of:
 
 1. **Simple Returns** - Basic percentage return calculations
 2. **Annualized Returns** - Compound Annual Growth Rate (CAGR)
@@ -26,16 +26,16 @@ The return calculation functions in `tddata.analytics` provide pandas-friendly i
 calculate_simple_return(current_value, initial_value, min_denominator=0.01)
 ```
 
-Calculates simple percentage returns for pandas Series.
+Calculates simple percentage returns for Polars Series.
 
 **Formula:** `((current_value / initial_value) - 1) * 100`
 
 **Example:**
 ```python
-import pandas as pd
+import polars as pl
 from tddata.analytics import calculate_simple_return
 
-prices = pd.DataFrame({
+prices = pl.DataFrame({
     'buy_price': [10000, 20000, 5000],
     'sell_price': [11000, 18000, 5500]
 })
@@ -54,9 +54,11 @@ Calculates holding period in days for positions.
 
 **Example:**
 ```python
-operations = pd.DataFrame({
-    'buy_date': pd.to_datetime(['2024-01-01', '2024-06-01']),
-    'sell_date': pd.to_datetime(['2024-07-01', '2024-12-01'])
+import polars as pl
+
+operations = pl.DataFrame({
+    'buy_date': pl.to_datetime(['2024-01-01', '2024-06-01']),
+    'sell_date': pl.to_datetime(['2024-07-01', '2024-12-01'])
 })
 
 days = calculate_holding_period_days(
@@ -84,7 +86,9 @@ Calculates Compound Annual Growth Rate (CAGR).
 
 **Example:**
 ```python
-positions = pd.DataFrame({
+import polars as pl
+
+positions = pl.DataFrame({
     'buy_value': [10000, 10000],
     'current_value': [11000, 11000],
     'holding_days': [365, 182]
@@ -146,13 +150,12 @@ coupons = reader.read_interest_coupons('interest_coupons.csv')  # Optional
 # Calculate returns with coupon support
 returns = analytics.calculate_operations_returns(operations, prices, coupons=coupons)
 
-# View closed positions with positive returns
-profitable = returns[
-    (returns['status'] == 'closed') &
-    (returns['simple_return'] > 0)
-].sort_values('annualized_return', ascending=False)
+# View closed positions with positive returns (Polars)
+profitable = returns.filter(
+    (returns['status'] == 'closed') & (returns['simple_return'] > 0)
+).sort('annualized_return', reverse=True)
 
-print(profitable[[
+print(profitable.select([
     C.BOND_TYPE.value,
     C.OPERATION_DATE.value,
     'sell_date',
@@ -160,7 +163,7 @@ print(profitable[[
     'total_coupons',
     'simple_return',
     'annualized_return'
-]])
+]))
 ```
 
 **Example Output:**
@@ -221,19 +224,20 @@ A deposit early in the month has a weight close to 1.0, while a deposit at the e
 **Example:**
 ```python
 # Calculate monthly returns for entire portfolio with coupon support
+import polars as pl
+import matplotlib.pyplot as plt
+
 monthly = analytics.calculate_portfolio_monthly_returns(
     operations,
     prices,
-    start_date=pd.Timestamp('2024-01-01'),
-    end_date=pd.Timestamp('2024-12-31'),
+    start_date=pl.Timestamp('2024-01-01'),
+    end_date=pl.Timestamp('2024-12-31'),
     coupons=coupons  # Include coupon distributions
 )
 
 # Plot cumulative returns
-import matplotlib.pyplot as plt
-
 plt.figure(figsize=(12, 6))
-plt.plot(monthly['month'], monthly['cumulative_return'])
+plt.plot(monthly['month'].to_numpy(), monthly['cumulative_return'].to_numpy())
 plt.title('Portfolio Cumulative Return (with Coupons)')
 plt.xlabel('Month')
 plt.ylabel('Cumulative Return (%)')
@@ -243,10 +247,11 @@ plt.show()
 # Summary statistics
 print(f"Best month: {monthly['monthly_return'].max():.2f}%")
 print(f"Worst month: {monthly['monthly_return'].min():.2f}%")
-print(f"Total return: {monthly.iloc[-1]['cumulative_return']:.2f}%")
+last_cum = monthly['cumulative_return'].to_numpy()[-1]
+print(f"Total return: {last_cum:.2f}%")
 
 # Analyze coupon impact
-total_coupons = monthly['net_cash_flow'].where(monthly['net_cash_flow'] < 0).sum()
+total_coupons = monthly.filter(monthly['net_cash_flow'] < 0)['net_cash_flow'].sum()
 print(f"Total coupon distributions: {abs(total_coupons):.2f}")
 ```
 
@@ -256,11 +261,11 @@ The tddata implementation differs from tddata-db in the following ways:
 
 | Feature | tddata-db | tddata |
 |---------|-----------|--------|
-| **Paradigm** | Object-oriented (classes) | Functional (pandas operations) |
+| **Paradigm** | Object-oriented (classes) | Functional (Polars expressions) |
 | **FIFO Tracking** | `LotTracker` class with state | Function-based matching in operations DataFrame |
 | **Portfolio** | `PortfolioTracker` class | `calculate_portfolio_monthly_returns` function |
 | **Price Lookup** | `PriceLookup` class with caching | DataFrame merge operations |
-| **Dependencies** | SQLAlchemy, dateutil | Pandas only (lighter) |
+| **Dependencies** | SQLAlchemy, dateutil | Polars only (lighter) |
 | **Use Case** | Database-backed application | Data analysis and plotting |
 
 ### Key Design Differences
