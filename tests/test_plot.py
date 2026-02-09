@@ -168,6 +168,34 @@ class TestPlot(unittest.TestCase):
         color_scheme = chart_dict.get("encoding", {}).get("color", {}).get("scale", {}).get("scheme")
         self.assertEqual(color_scheme, "viridis")
 
+    def test_plot_prices_legend_order(self):
+        # Create two maturities in reverse chronological order to ensure legend is ordered by date
+        prices = pl.DataFrame(
+            {
+                Column.REFERENCE_DATE.value: [
+                    datetime(2024, 1, 1),
+                    datetime(2024, 1, 2),
+                ],
+                Column.MATURITY_DATE.value: [
+                    datetime(2026, 3, 1),
+                    datetime(2025, 1, 1),
+                ],
+                Column.BOND_TYPE.value: ["Type A", "Type A"],
+                Column.BUY_PRICE.value: [900.0, 905.0],
+                Column.SELL_PRICE.value: [890.0, 895.0],
+            }
+        )
+        chart = plot.plot_prices(prices, "Type A", Column.BUY_PRICE.value)
+        chart_dict = chart.to_dict()
+        color_sort = chart_dict.get("encoding", {}).get("color", {}).get("sort")
+
+        # Expected order is earliest maturity first
+        expected = [
+            datetime(2025, 1, 1).strftime("%b/%Y"),
+            datetime(2026, 3, 1).strftime("%b/%Y"),
+        ]
+        self.assertEqual(color_sort, expected)
+
 
 if __name__ == "__main__":
     unittest.main()

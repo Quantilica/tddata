@@ -52,6 +52,26 @@ def plot_prices(data: pl.DataFrame, bond_type: str, variable: str) -> alt.Chart:
     # Format maturity dates for legend
     subset = subset.with_columns(pl.col(C.MATURITY_DATE.value).dt.strftime("%b/%Y").alias("maturity_formatted"))
 
+    # Build an explicit ordered list of maturities (formatted labels) sorted by the
+    # actual maturity date so the legend is chronological rather than alphabetical.
+    if C.MATURITY_DATE.value in subset.columns:
+        pairs = (
+            subset.select([C.MATURITY_DATE.value, "maturity_formatted"])
+            .unique()
+            .sort(C.MATURITY_DATE.value)
+            .filter(pl.col("maturity_formatted").is_not_null())
+            .to_dicts()
+        )
+        maturity_order = []
+        seen = set()
+        for r in pairs:
+            label = r.get("maturity_formatted")
+            if label not in seen:
+                seen.add(label)
+                maturity_order.append(label)
+    else:
+        maturity_order = None
+
     chart = (
         alt.Chart(subset)
         .mark_line()
@@ -62,6 +82,7 @@ def plot_prices(data: pl.DataFrame, bond_type: str, variable: str) -> alt.Chart:
                 "maturity_formatted:N",
                 title="Maturity",
                 scale=alt.Scale(scheme="viridis"),
+                sort=maturity_order,
             ),
             tooltip=[
                 alt.Tooltip(f"{C.REFERENCE_DATE.value}:T", title="Date"),
