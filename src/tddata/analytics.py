@@ -135,6 +135,10 @@ def aggregate_new_investors(data: pl.DataFrame, freq: str = "1mo") -> pl.DataFra
     if C.INVESTOR_ID.value in df.columns:
         df = df.unique(subset=[C.INVESTOR_ID.value], keep="first")
 
+    # Polars requires the grouping column to be sorted for group_by_dynamic
+    if C.JOIN_DATE.value in df.columns:
+        df = df.sort(C.JOIN_DATE.value)
+
     return (
         df.group_by_dynamic(C.JOIN_DATE.value, every=freq).agg(pl.len().alias("new_investors")).sort(C.JOIN_DATE.value)
     )

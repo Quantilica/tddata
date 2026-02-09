@@ -73,6 +73,28 @@ class TestAnalytics(unittest.TestCase):
         self.assertEqual(result_with_zeros.height, 1)
         self.assertEqual(result_with_zeros[Column.BUY_PRICE.value][0], 905.0)
 
+    def test_aggregate_new_investors_unsorted(self):
+        # Create unsorted join dates across months and verify aggregation
+        data = pl.DataFrame(
+            {
+                Column.INVESTOR_ID.value: [1, 2, 3],
+                Column.JOIN_DATE.value: [
+                    datetime(2024, 3, 15),
+                    datetime(2024, 1, 10),
+                    datetime(2024, 3, 20),
+                ],
+            }
+        )
+
+        res = analytics.aggregate_new_investors(data, freq="1mo")
+
+        # Expect two months: 2024-01 (1 new investor) and 2024-03 (2 new investors)
+        self.assertEqual(res.height, 2)
+        # The grouped date should be truncated to first of month
+        expected_months = [datetime(2024, 1, 1), datetime(2024, 3, 1)]
+        self.assertListEqual(res[Column.JOIN_DATE.value].to_list(), expected_months)
+        self.assertListEqual(res["new_investors"].to_list(), [1, 2])
+
 
 if __name__ == "__main__":
     unittest.main()
