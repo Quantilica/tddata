@@ -118,6 +118,29 @@ def prepare_population_pyramid(data: pl.DataFrame) -> pl.DataFrame:
         values="count",
     ).fill_null(0)
 
+    # Ensure age groups are sorted by numeric lower bound (eg '0-4', '5-9', ...)
+    # Create an ordering map from age_group label to its lower bound
+    def _lower_bound(label: str) -> int:
+        try:
+            return int(label.split("-")[0])
+        except Exception:
+            # Place malformed or null labels at the end
+            return 10**9
+
+    # Remove null age groups and compute ordering from numeric lower bound
+    pivoted = pivoted.filter(pl.col("age_group").is_not_null())
+    order_map = {row["age_group"]: _lower_bound(row["age_group"]) for row in pivoted.to_dicts()}
+
+    pivoted = (
+        pivoted.with_columns(
+            pl.col("age_group")
+            .map_elements(lambda x: order_map.get(x, 10**9), return_dtype=pl.Int64)
+            .alias("_age_order")
+        )
+        .sort("_age_order", descending=True)
+        .drop("_age_order")
+    )
+
     return pivoted
 
 

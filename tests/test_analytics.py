@@ -95,6 +95,30 @@ class TestAnalytics(unittest.TestCase):
         self.assertListEqual(res[Column.JOIN_DATE.value].to_list(), expected_months)
         self.assertListEqual(res["new_investors"].to_list(), [1, 2])
 
+    def test_prepare_population_pyramid_ordering(self):
+        # Create ages that fall into several 5-year bins and include a null age to verify
+        # null groups are removed and ordering is descending (older groups first)
+        data = pl.DataFrame(
+            {
+                Column.AGE.value: [1, 6, 11, 16, None],
+                Column.GENDER.value: ["F", "M", "F", "M", "F"],
+            }
+        )
+
+        pivoted = analytics.prepare_population_pyramid(data)
+        age_groups = pivoted["age_group"].to_list()
+
+        def _lower(label: str) -> int:
+            try:
+                return int(label.split("-")[0])
+            except Exception:
+                return 10**9
+
+        # Ensure no null age group present
+        self.assertTrue(all((ag is not None and str(ag).lower() != "null") for ag in age_groups))
+        # Expect descending order by numeric lower bound (oldest first)
+        self.assertListEqual(age_groups, sorted(age_groups, key=_lower, reverse=True))
+
 
 if __name__ == "__main__":
     unittest.main()

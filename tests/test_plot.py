@@ -20,7 +20,7 @@ from datetime import datetime
 import altair as alt
 import polars as pl
 
-from tddata import plot
+from tddata import analytics, plot
 from tddata.constants import Column
 
 
@@ -115,6 +115,21 @@ class TestPlot(unittest.TestCase):
     def test_plot_investors_population_pyramid(self):
         chart = plot.plot_investors_population_pyramid(self.investors_data)
         self.assertIsInstance(chart, alt.Chart)
+
+    def test_plot_investors_population_pyramid_sort(self):
+        # Create ages spanning bins and ensure chart uses explicit y-sort matching analytics
+        data = pl.DataFrame(
+            {
+                Column.AGE.value: [25, 45, 5],
+                Column.GENDER.value: ["M", "F", "M"],
+            }
+        )
+        chart = plot.plot_investors_population_pyramid(data)
+        chart_dict = chart.to_dict()
+        y_sort = chart_dict.get("encoding", {}).get("y", {}).get("sort")
+
+        expected_order = analytics.prepare_population_pyramid(data)["age_group"].to_list()
+        self.assertEqual(y_sort, expected_order)
 
     def test_plot_investors_evolution(self):
         chart = plot.plot_investors_evolution(self.investors_data)

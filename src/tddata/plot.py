@@ -256,11 +256,15 @@ def plot_investors_population_pyramid(data: pl.DataFrame) -> alt.Chart:
 
     combined = pl.concat([male_data, female_data])
 
+    # Extract explicit age group order from the pivoted data to make visualization
+    # resilient to any DataFrame row ordering changes later.
+    age_order = pivoted["age_group"].to_list() if "age_group" in pivoted.columns else None
+
     chart = (
         alt.Chart(combined)
         .mark_bar()
         .encode(
-            y=alt.Y("age_group:N", title="Age Group", sort=None),
+            y=alt.Y("age_group:N", title="Age Group", sort=age_order),
             x=alt.X(
                 "count:Q",
                 title="Number of Investors",
