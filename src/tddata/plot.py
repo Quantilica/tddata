@@ -58,7 +58,11 @@ def plot_prices(data: pl.DataFrame, bond_type: str, variable: str) -> alt.Chart:
         .encode(
             x=alt.X(f"{C.REFERENCE_DATE.value}:T", title="Date"),
             y=alt.Y(f"{variable}:Q", title=variable_description),
-            color=alt.Color("maturity_formatted:N", title="Maturity"),
+            color=alt.Color(
+                "maturity_formatted:N",
+                title="Maturity",
+                scale=alt.Scale(scheme="viridis"),
+            ),
             tooltip=[
                 alt.Tooltip(f"{C.REFERENCE_DATE.value}:T", title="Date"),
                 alt.Tooltip("maturity_formatted:N", title="Maturity"),

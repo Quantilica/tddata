@@ -27,10 +27,26 @@ PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def save_plot(chart, filename):
-    """Save an Altair chart to a file."""
+    """Save an Altair chart to a file.
+
+    Prefers image formats (PNG/SVG) when the filename extension indicates one
+    or defaults to PNG if no extension is provided. Falls back to HTML on error.
+    """
+    # Ensure filename has an extension; default to .png
+    p = Path(filename)
+    if p.suffix == "":
+        filename = f"{filename}.png"
+
     filepath = PLOTS_DIR / filename
     print(f"Saving {filepath}...")
-    chart.save(str(filepath))
+    try:
+        chart.save(str(filepath))
+    except Exception as e:
+        # If saving as image fails (missing saver backend), fall back to HTML
+        print(f"  Failed saving as image: {e}. Falling back to HTML.")
+        html_fp = filepath.with_suffix(".html")
+        chart.save(str(html_fp))
+        print(f"  Saved fallback HTML to {html_fp}")
 
 
 def run_prices(data_dir: Path):
@@ -57,7 +73,7 @@ def run_prices(data_dir: Path):
             print(f"  Plotting {bond_type} - {var}...")
             try:
                 chart = plot.plot_prices(data, bond_type, var)
-                save_plot(chart, f"prices_{bond_slug}_{var}.html")
+                save_plot(chart, f"prices_{bond_slug}_{var}.png")
             except Exception as e:
                 print(f"  Error plotting {bond_type} {var}: {e}")
 
@@ -73,11 +89,11 @@ def run_stock(data_dir: Path):
 
     print("  Plotting stock evolution by bond type...")
     chart = plot.plot_stock(data, by_bond_type=True)
-    save_plot(chart, "stock_evolution_by_type.html")
+    save_plot(chart, "stock_evolution_by_type.png")
 
     print("  Plotting total stock evolution...")
     chart = plot.plot_stock(data, by_bond_type=False)
-    save_plot(chart, "stock_evolution_total.html")
+    save_plot(chart, "stock_evolution_total.png")
 
 
 def run_investors(data_dir: Path):
@@ -113,7 +129,7 @@ def run_investors(data_dir: Path):
     # Plot population pyramid (age by gender)
     print("  Plotting population pyramid (age by gender)...")
     chart = plot.plot_investors_population_pyramid(full_data)
-    save_plot(chart, "investors_population_pyramid.html")
+    save_plot(chart, "investors_population_pyramid.png")
 
     # Plot other demographics
     demographics = [
@@ -130,11 +146,11 @@ def run_investors(data_dir: Path):
             kind = "barh"
 
         chart = plot.plot_investors_demographics(full_data, column=demo, chart_type=kind)
-        save_plot(chart, f"investors_demographics_{demo}.html")
+        save_plot(chart, f"investors_demographics_{demo}.png")
 
     print("  Plotting new investors evolution (all history)...")
     chart = plot.plot_investors_evolution(full_data, freq="1mo")
-    save_plot(chart, "investors_new_evolution_history.html")
+    save_plot(chart, "investors_new_evolution_history.png")
 
 
 def run_operations(data_dir: Path):
@@ -157,7 +173,7 @@ def run_operations(data_dir: Path):
         full_data = pl.concat(all_data)
         print("  Plotting operations by type (all history)...")
         chart = plot.plot_operations(full_data, by_type=True)
-        save_plot(chart, "operations_evolution_by_type_history.html")
+        save_plot(chart, "operations_evolution_by_type_history.png")
 
 
 def run_sales(data_dir: Path):
@@ -171,7 +187,7 @@ def run_sales(data_dir: Path):
 
     print("  Plotting sales by bond type...")
     chart = plot.plot_sales(data, by_bond_type=True)
-    save_plot(chart, "sales_evolution_by_type.html")
+    save_plot(chart, "sales_evolution_by_type.png")
 
 
 def run_buybacks(data_dir: Path):
@@ -185,7 +201,7 @@ def run_buybacks(data_dir: Path):
 
     print("  Plotting buybacks by bond type...")
     chart = plot.plot_buybacks(data, by_bond_type=True)
-    save_plot(chart, "buybacks_evolution_by_type.html")
+    save_plot(chart, "buybacks_evolution_by_type.png")
 
 
 def run_maturities(data_dir: Path):
@@ -199,7 +215,7 @@ def run_maturities(data_dir: Path):
 
     print("  Plotting maturities by bond type...")
     chart = plot.plot_maturities(data, by_bond_type=True)
-    save_plot(chart, "maturities_evolution_by_type.html")
+    save_plot(chart, "maturities_evolution_by_type.png")
 
 
 def run_interest_coupons(data_dir: Path):
@@ -215,7 +231,7 @@ def run_interest_coupons(data_dir: Path):
 
     print("  Plotting interest coupons by bond type...")
     chart = plot.plot_interest_coupons(data, by_bond_type=True)
-    save_plot(chart, "interest_coupons_evolution_by_type.html")
+    save_plot(chart, "interest_coupons_evolution_by_type.png")
 
 
 def main():

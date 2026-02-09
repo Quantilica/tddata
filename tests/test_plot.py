@@ -163,6 +163,11 @@ class TestPlot(unittest.TestCase):
         chart = plot.plot_prices(self.prices_data, "Type A", Column.BUY_PRICE.value)
         self.assertIsInstance(chart, alt.Chart)
 
+        # Ensure color scale uses Viridis palette
+        chart_dict = chart.to_dict()
+        color_scheme = chart_dict.get("encoding", {}).get("color", {}).get("scale", {}).get("scheme")
+        self.assertEqual(color_scheme, "viridis")
+
 
 if __name__ == "__main__":
     unittest.main()
