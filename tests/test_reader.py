@@ -146,12 +146,22 @@ class TestReader(unittest.TestCase):
         chunks = list(iterator)
         self.assertEqual(len(chunks), 2)
 
+        # New: assert each chunk is a Polars DataFrame and contains expected processed data
+        for idx, chunk in enumerate(chunks, start=1):
+            self.assertIsInstance(chunk, pl.DataFrame)
+            self.assertEqual(chunk.height, 1)
+            self.assertIn(Column.INVESTOR_ID.value, chunk.columns)
+            # Check investor id value is correct in each chunk
+            self.assertEqual(chunk[Column.INVESTOR_ID.value][0], idx)
+            # Check date column was processed in chunk
+            self.assertEqual(chunk[Column.JOIN_DATE.value].dtype, pl.Date)
+
         df = pl.concat(chunks)
         self.assertEqual(df.height, 2)
         self.assertEqual(df[Column.INVESTOR_ID.value][0], 1)
         self.assertEqual(df[Column.INVESTOR_ID.value][1], 2)
 
-        # Verify processing happened on chunks (checking column renaming and types)
+        # Verify processing happened on combined DataFrame as well
         self.assertIn(Column.INVESTOR_ID.value, df.columns)
         self.assertEqual(df[Column.JOIN_DATE.value].dtype, pl.Date)
 

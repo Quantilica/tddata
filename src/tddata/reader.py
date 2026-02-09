@@ -73,14 +73,20 @@ def _read_and_process_csv(
         )
         return _process(data)
     else:
-        # Batched reading
-        reader = pl.read_csv_batched(
+        # Batched reading — use `scan_csv().collect_batches()` to avoid deprecated API
+        lf = pl.scan_csv(
             filepath,
             separator=";",
             decimal_comma=True,
-            batch_size=chunksize,
         )
-        return (_process(batch) for batch in reader)
+        batches = lf.collect_batches(chunk_size=chunksize)
+
+        def _batch_generator() -> Iterator[pl.DataFrame]:
+            # `collect_batches()` returns an iterator of DataFrames (streamed chunks).
+            for batch in batches:
+                yield _process(batch)
+
+        return _batch_generator()
 
 
 def read_prices(filepath: Path, chunksize: Optional[int] = None) -> Union[pl.DataFrame, Iterator[pl.DataFrame]]:
