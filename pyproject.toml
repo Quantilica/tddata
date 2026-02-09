@@ -26,7 +26,7 @@ dependencies = [
 
 [project.optional-dependencies]
 analysis = [
-    "altair>=6.0.0",
+    "altair[save]>=6.0.0",
     "polars>=1.38.1",
 ]
 
