@@ -51,4 +51,4 @@ __all__ = [
 if _HAS_ANALYSIS:
     __all__.extend(["plot", "reader"])
 
-__version__ = "2.1.0"
+__version__ = "2.1.1"
