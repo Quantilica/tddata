@@ -183,14 +183,43 @@ def aggregate_operations(data: pl.DataFrame, by_type: bool = True) -> pl.DataFra
 
 
 def aggregate_value_over_time(
-    data: pl.DataFrame, date_col: str, value_col: str, group_col: str | None = None
+    data: pl.DataFrame, date_col: str, value_col: str, group_col: str | None = None, freq: str = "1mo"
 ) -> pl.DataFrame:
-    """Generic aggregation of value over time (monthly)."""
-    df = data.with_columns(pl.col(date_col).dt.truncate("1mo").alias("month"))
+    """Generic aggregation of value over time.
+
+    Args:
+        data: DataFrame containing the date and value columns
+        date_col: Name of the date column
+        value_col: Name of the value column to aggregate
+        group_col: Optional column to group by alongside the time period
+        freq: Frequency string for grouping (e.g., '1mo' for monthly, '6mo' for semiannual)
+    """
+    df = data.clone()
+
+    # Monthly truncation (default, simple path)
+    if freq == "1mo":
+        df = df.with_columns(pl.col(date_col).dt.truncate("1mo").alias("month"))
+        if group_col:
+            return df.group_by(["month", group_col]).agg(pl.col(value_col).sum()).sort(["month", group_col])
+        return df.group_by("month").agg(pl.col(value_col).sum()).sort("month")
+
+    # For other frequencies (e.g., '6mo'), use group_by_dynamic which requires sorted input
+    # Ensure the date column is sorted
+    if date_col in df.columns:
+        df = df.sort(date_col)
 
     if group_col:
-        return df.group_by(["month", group_col]).agg(pl.col(value_col).sum()).sort(["month", group_col])
-    return df.group_by("month").agg(pl.col(value_col).sum()).sort("month")
+        # Use the new `group_by` argument name (replaces deprecated `by`)
+        res = df.group_by_dynamic(date_col, every=freq, group_by=group_col).agg(pl.col(value_col).sum())
+        # Rename the grouping column to 'month' for consistency
+        if date_col in res.columns:
+            res = res.rename({date_col: "month"})
+        return res.sort(["month", group_col])
+
+    res = df.group_by_dynamic(date_col, every=freq).agg(pl.col(value_col).sum())
+    if date_col in res.columns:
+        res = res.rename({date_col: "month"})
+    return res.sort("month")
 
 
 # ============================================================================

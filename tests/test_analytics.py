@@ -119,6 +119,25 @@ class TestAnalytics(unittest.TestCase):
         # Expect descending order by numeric lower bound (oldest first)
         self.assertListEqual(age_groups, sorted(age_groups, key=_lower, reverse=True))
 
+    def test_aggregate_value_over_time_semiannual(self):
+        data = pl.DataFrame(
+            {
+                Column.BUYBACK_DATE.value: [
+                    datetime(2024, 1, 10),
+                    datetime(2024, 3, 15),
+                    datetime(2024, 7, 1),
+                ],
+                Column.VALUE.value: [100, 200, 300],
+            }
+        )
+
+        res = analytics.aggregate_value_over_time(data, Column.BUYBACK_DATE.value, Column.VALUE.value, freq="6mo")
+
+        # Expect two periods: 2024-01-01 (100+200=300), 2024-07-01 (300)
+        self.assertEqual(res.height, 2)
+        self.assertListEqual(res["month"].to_list(), [datetime(2024, 1, 1), datetime(2024, 7, 1)])
+        self.assertListEqual(res[Column.VALUE.value].to_list(), [300, 300])
+
 
 if __name__ == "__main__":
     unittest.main()

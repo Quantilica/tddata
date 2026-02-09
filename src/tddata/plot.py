@@ -475,6 +475,7 @@ def plot_interest_coupons(data: pl.DataFrame, by_bond_type: bool = True) -> alt.
     Returns:
         Altair Chart object
     """
+    # Use semiannual grouping for interest coupons
     return _plot_value_over_time(
         data,
         date_col=C.BUYBACK_DATE.value,
@@ -482,6 +483,7 @@ def plot_interest_coupons(data: pl.DataFrame, by_bond_type: bool = True) -> alt.
         title="Interest Coupons Payments Over Time",
         hue_col=C.BOND_TYPE.value if by_bond_type else None,
         legend_title="Bond Type",
+        freq="6mo",
     )
 
 
@@ -492,6 +494,7 @@ def _plot_value_over_time(
     title: str,
     hue_col: Optional[str] = None,
     legend_title: Optional[str] = None,
+    freq: str = "1mo",
 ) -> alt.Chart:
     """Helper function to plot values over time.
 
@@ -506,9 +509,7 @@ def _plot_value_over_time(
     Returns:
         Altair Chart object
     """
-    grouped = analytics.aggregate_value_over_time(
-        data, date_col, value_col, group_col=hue_col
-    )
+    grouped = analytics.aggregate_value_over_time(data, date_col, value_col, group_col=hue_col, freq=freq)
 
     if hue_col:
         chart = (
