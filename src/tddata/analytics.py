@@ -114,7 +114,7 @@ def prepare_population_pyramid(data: pl.DataFrame) -> pl.DataFrame:
     # Pivot to get male and female columns
     pivoted = grouped.pivot(
         index="age_group",
-        columns=C.GENDER.value,
+        on=C.GENDER.value,
         values="count",
     ).fill_null(0)
 
