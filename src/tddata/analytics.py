@@ -218,7 +218,7 @@ def aggregate_value_over_time(
 
     res = df.group_by_dynamic(date_col, every=freq).agg(pl.col(value_col).sum())
     if date_col in res.columns:
-        res = res.rename({date_col: "month"})
+        res = res.rename({dateCol: "month"})
     return res.sort("month")
 
 
@@ -256,115 +256,28 @@ def calculate_operations_returns(
     current_date: Optional[date] = None,
     coupons: Optional[pl.DataFrame] = None,
 ) -> pl.DataFrame:
-    """Calculate returns for individual operations (buy/sell pairs).
+    """Calculate returns for each buy operation with FIFO matching for sells.
 
-    This function matches buy operations with their corresponding sell operations
-    and calculates returns. For open positions, it uses current prices.
-    Supports semiannual coupon payments for bonds with "Juros Semestrais".
-
-    Args:
-        operations: Polars DataFrame with columns: operation_date, bond_type, maturity_date,
-            quantity, bond_value, operation_value, operation_type.
-        prices: Polars DataFrame with columns: reference_date, bond_type, maturity_date,
-            sell_price.
-        current_date: Date to calculate returns as of (defaults to today).
-            Accepts datetime.date or datetime.datetime.
-        coupons: Polars DataFrame with coupon payment data (from read_interest_coupons).
-            Expected columns: bond_type, maturity_date, buyback_date, unit_price.
-            If provided, coupon income is included in return calculations.
-
-    Returns:
-        Polars DataFrame with buy operations and calculated returns.
-
-    Example:
-        >>> ops = pl.DataFrame({
-        ...     "operation_date": [datetime(2024, 1, 1), datetime(2024, 7, 1)],
-        ...     "bond_type": ["Tesouro Selic", "Tesouro Selic"],
-        ...     "maturity_date": [datetime(2030, 1, 1), datetime(2030, 1, 1)],
-        ...     "quantity": [10, -10],
-        ...     "bond_value": [10000, 11000],
-        ...     "operation_value": [10000, 11000],
-        ...     "operation_type": ["C", "V"],
-        ... })
-        >>> prices_df = pl.DataFrame({
-        ...     "reference_date": [datetime(2024, 6, 1)],
-        ...     "bond_type": ["Tesouro Selic"],
-        ...     "maturity_date": [datetime(2030, 1, 1)],
-        ...     "sell_price": [10500],
-        ... })
-        >>> returns = calculate_operations_returns(ops, prices_df)
+    Handles partial sells by splitting lots into closed and open positions.
+    Returns a DataFrame with one row per lot (closed or open).
     """
-    if current_date is None:
-        current_date = date.today()
-    elif isinstance(current_date, datetime):
-        current_date = current_date.date()
-
-    # Filter out rows with zero bond value
-    df = operations.filter(pl.col(C.BOND_VALUE.value) > 0)
-
-    # Separate buys and sells
-    buys = df.filter(pl.col(C.OPERATION_TYPE.value).is_in(["C", "D", "buy"])).sort(C.OPERATION_DATE.value)
-    sells = df.filter(~pl.col(C.OPERATION_TYPE.value).is_in(["C", "D", "buy"])).sort(C.OPERATION_DATE.value)
-
-    if buys.height == 0:
+    if operations.height == 0:
         return pl.DataFrame()
 
-    # Convert to list of dicts for FIFO matching (row-level mutation needed)
-    buy_records = buys.to_dicts()
-    sell_records = sells.to_dicts()
-
+    if current_date is None:
+        current_date = date.today()
     current_date_dt = datetime(current_date.year, current_date.month, current_date.day)
 
-    # Initialize computed fields
-    for rec in buy_records:
-        op_date = rec[C.OPERATION_DATE.value]
-        if isinstance(op_date, date) and not isinstance(op_date, datetime):
-            op_date = datetime(op_date.year, op_date.month, op_date.day)
-        rec["holding_days"] = (current_date_dt - op_date).days
-        rec["status"] = "open"
-        rec["sell_date"] = None
-        rec["sell_value"] = 0.0
-        rec["current_value"] = 0.0
+    # Separate buys and sells
+    buy_records = operations.filter(pl.col(C.OPERATION_TYPE.value) == OperationType.BUY.value).to_dicts()
+    sell_records = operations.filter(pl.col(C.OPERATION_TYPE.value) == OperationType.SELL.value).to_dicts()
 
-    # Match sells to buys (simplified FIFO)
-    # Group buys by (bond_type, maturity_date)
-    from collections import defaultdict
+    if not buy_records:
+        return pl.DataFrame()
 
-    buy_index = defaultdict(list)
-    for i, rec in enumerate(buy_records):
-        key = (rec[C.BOND_TYPE.value], rec[C.MATURITY_DATE.value])
-        buy_index[key].append(i)
-
-    for sell_rec in sell_records:
-        sell_key = (sell_rec[C.BOND_TYPE.value], sell_rec[C.MATURITY_DATE.value])
-        if sell_key not in buy_index:
-            continue
-
-        sell_date = sell_rec[C.OPERATION_DATE.value]
-        if isinstance(sell_date, date) and not isinstance(sell_date, datetime):
-            sell_date = datetime(sell_date.year, sell_date.month, sell_date.day)
-
-        # Find first open buy before this sell
-        for idx in buy_index[sell_key]:
-            buy_rec = buy_records[idx]
-            if buy_rec["status"] != "open":
-                continue
-            buy_date = buy_rec[C.OPERATION_DATE.value]
-            if isinstance(buy_date, date) and not isinstance(buy_date, datetime):
-                buy_date = datetime(buy_date.year, buy_date.month, buy_date.day)
-            if buy_date <= sell_date:
-                buy_rec["status"] = "closed"
-                buy_rec["sell_date"] = sell_rec[C.OPERATION_DATE.value]
-                buy_rec["sell_value"] = abs(sell_rec[C.OPERATION_VALUE.value])
-                buy_rec["holding_days"] = (sell_date - buy_date).days
-                break
-
-    # Get current prices for open positions
+    # Build price lookup dict: (bond_type, maturity_date) -> latest_sell_price
+    price_lookup = {}
     if prices.height > 0:
-        # Get current month start for matching
-        current_month_start = datetime(current_date.year, current_date.month, 1)
-
-        # Get latest price per bond type/maturity up to current date
         latest_prices = (
             prices.filter(pl.col(C.REFERENCE_DATE.value) <= current_date_dt)
             .sort(C.REFERENCE_DATE.value)
@@ -372,34 +285,147 @@ def calculate_operations_returns(
             .last()
         )
 
-        # Build a price lookup dict
-        price_lookup = {}
         for row in latest_prices.iter_rows(named=True):
-            price_lookup[(row[C.BOND_TYPE.value], row[C.MATURITY_DATE.value])] = row[C.SELL_PRICE.value]
+            mat = row[C.MATURITY_DATE.value]
+            # Normalize maturity_date to date for consistent key matching
+            if isinstance(mat, datetime):
+                mat_key = mat.date()
+            else:
+                mat_key = mat
+            price_lookup[(row[C.BOND_TYPE.value], mat_key)] = row[C.SELL_PRICE.value]
 
-        for rec in buy_records:
-            if rec["status"] == "open":
-                key = (rec[C.BOND_TYPE.value], rec[C.MATURITY_DATE.value])
-                price = price_lookup.get(key)
-                if price is not None:
-                    rec["current_value"] = rec[C.QUANTITY.value] * price
+    # Initialize remaining quantity tracking and maturity key for all buys
+    for rec in buy_records:
+        rec["_remaining_qty"] = float(rec.get(C.QUANTITY.value) or 0.0)
+        mat = rec.get(C.MATURITY_DATE.value)
+        if isinstance(mat, datetime):
+            rec["_maturity_date_key"] = mat.date()
+        else:
+            rec["_maturity_date_key"] = mat
+
+    # Build FIFO index: (bond_type, maturity_date) -> [buy_record_indices sorted by date]
+    buy_index = {}
+    for idx, rec in enumerate(buy_records):
+        key = (rec[C.BOND_TYPE.value], rec["_maturity_date_key"])
+        buy_index.setdefault(key, []).append(idx)
+
+    # Sort each FIFO queue by operation date
+    for key in buy_index:
+        buy_index[key].sort(key=lambda i: buy_records[i][C.OPERATION_DATE.value])
+
+    # Process sells using quantity-aware FIFO matching
+    closed_lots = []
+    for sell_rec in sell_records:
+        mat = sell_rec[C.MATURITY_DATE.value]
+        if isinstance(mat, datetime):
+            mat_key = mat.date()
+        else:
+            mat_key = mat
+        sell_key = (sell_rec[C.BOND_TYPE.value], mat_key)
+
+        sell_date = sell_rec[C.OPERATION_DATE.value]
+        if isinstance(sell_date, date) and not isinstance(sell_date, datetime):
+            sell_date = datetime(sell_date.year, sell_date.month, sell_date.day)
+
+        sell_qty = abs(float(sell_rec.get(C.QUANTITY.value) or 0.0))
+        if sell_qty <= 0.0:
+            continue
+
+        sell_value_total = abs(float(sell_rec.get(C.OPERATION_VALUE.value) or 0.0))
+        unit_sell_price = sell_value_total / sell_qty if sell_qty > 0 else 0.0
+
+        remaining = sell_qty
+        for idx in buy_index.get(sell_key, []):
+            if remaining <= 0:
+                break
+            buy_rec = buy_records[idx]
+            avail = buy_rec.get("_remaining_qty", 0.0)
+            if avail <= 0.0:
+                continue
+
+            # Match quantity (FIFO)
+            match_qty = min(avail, remaining)
+            sell_value_portion = unit_sell_price * match_qty
+
+            # Create closed lot record
+            buy_date = buy_rec[C.OPERATION_DATE.value]
+            if isinstance(buy_date, date) and not isinstance(buy_date, datetime):
+                buy_date = datetime(buy_date.year, buy_date.month, buy_date.day)
+
+            buy_qty_original = float(buy_rec.get(C.QUANTITY.value) or 0.0)
+            buy_value_original = float(buy_rec.get(C.OPERATION_VALUE.value) or 0.0)
+            unit_buy_price = buy_value_original / buy_qty_original if buy_qty_original > 0 else 0.0
+
+            closed = {
+                C.INVESTOR_ID.value: buy_rec.get(C.INVESTOR_ID.value),
+                C.BOND_TYPE.value: buy_rec[C.BOND_TYPE.value],
+                C.MATURITY_DATE.value: buy_rec[C.MATURITY_DATE.value],
+                C.OPERATION_DATE.value: buy_rec[C.OPERATION_DATE.value],
+                C.QUANTITY.value: match_qty,
+                C.OPERATION_VALUE.value: unit_buy_price * match_qty,
+                "sell_date": sell_rec[C.OPERATION_DATE.value],
+                "sell_value": sell_value_portion,
+                "holding_days": (sell_date - buy_date).days,
+                "status": "closed",
+                "total_coupons": 0.0,
+                "_maturity_date_key": buy_rec["_maturity_date_key"],
+            }
+            closed_lots.append(closed)
+
+            # Update remaining quantities
+            buy_rec["_remaining_qty"] = avail - match_qty
+            remaining -= match_qty
+
+    # Build open lots from remaining quantities
+    open_lots = []
+    for rec in buy_records:
+        rem = rec.get("_remaining_qty", 0.0)
+        if rem > 0.0:
+            mat_key = rec.get("_maturity_date_key")
+            price = price_lookup.get((rec[C.BOND_TYPE.value], mat_key))
+            current_value = rem * price if price is not None else 0.0
+
+            buy_qty_original = float(rec.get(C.QUANTITY.value) or 0.0)
+            buy_value_original = float(rec.get(C.OPERATION_VALUE.value) or 0.0)
+            unit_buy_price = buy_value_original / buy_qty_original if buy_qty_original > 0 else 0.0
+
+            buy_date = rec[C.OPERATION_DATE.value]
+            if isinstance(buy_date, date) and not isinstance(buy_date, datetime):
+                buy_date = datetime(buy_date.year, buy_date.month, buy_date.day)
+
+            open_rec = {
+                C.INVESTOR_ID.value: rec.get(C.INVESTOR_ID.value),
+                C.BOND_TYPE.value: rec[C.BOND_TYPE.value],
+                C.MATURITY_DATE.value: rec[C.MATURITY_DATE.value],
+                C.OPERATION_DATE.value: rec[C.OPERATION_DATE.value],
+                C.QUANTITY.value: rem,
+                C.OPERATION_VALUE.value: unit_buy_price * rem,
+                "current_value": current_value,
+                "status": "open",
+                "sell_date": None,
+                "sell_value": 0.0,
+                "holding_days": (current_date_dt - buy_date).days,
+                "total_coupons": 0.0,
+                "_maturity_date_key": rec.get("_maturity_date_key"),
+            }
+            open_lots.append(open_rec)
+
+    # Combine all lots for coupon allocation
+    all_lots = closed_lots + open_lots
 
     # Calculate coupon income per lot
-    for rec in buy_records:
-        rec["total_coupons"] = 0.0
-
     if coupons is not None and coupons.height > 0:
-        for rec in buy_records:
+        for lot in all_lots:
             bond_coupons = coupons.filter(
-                (pl.col(C.BOND_TYPE.value) == rec[C.BOND_TYPE.value])
-                & (pl.col(C.MATURITY_DATE.value) == rec[C.MATURITY_DATE.value])
+                (pl.col(C.BOND_TYPE.value) == lot[C.BOND_TYPE.value])
+                & (pl.col(C.MATURITY_DATE.value) == lot.get("_maturity_date_key", lot[C.MATURITY_DATE.value]))
             )
             if bond_coupons.height == 0:
                 continue
 
-            buy_date = rec[C.OPERATION_DATE.value]
-            if rec["status"] == "closed" and rec["sell_date"] is not None:
-                end_dt = rec["sell_date"]
+            buy_date = lot[C.OPERATION_DATE.value]
+            if lot.get("status") == "closed" and lot.get("sell_date") is not None:
+                end_dt = lot["sell_date"]
             else:
                 end_dt = current_date_dt
 
@@ -408,27 +434,23 @@ def calculate_operations_returns(
             )
             if period_coupons.height > 0:
                 total_coupon_per_unit = period_coupons[C.UNIT_PRICE.value].sum()
-                rec["total_coupons"] = rec[C.QUANTITY.value] * total_coupon_per_unit
+                lot["total_coupons"] = lot[C.QUANTITY.value] * total_coupon_per_unit
 
-    # Calculate returns
-    for rec in buy_records:
+    # Calculate returns per lot
+    final_records = []
+    for rec in all_lots:
         if rec["status"] == "closed":
-            rec["end_value"] = rec["sell_value"] + rec["total_coupons"]
+            endv = rec.get("sell_value", 0.0) + rec.get("total_coupons", 0.0)
         else:
-            rec["end_value"] = rec["current_value"] + rec["total_coupons"]
+            endv = rec.get("current_value", 0.0) + rec.get("total_coupons", 0.0)
 
-        # Simple return
-        initial = rec[C.OPERATION_VALUE.value]
-        end_val = rec["end_value"]
-        if initial >= 0.01 and end_val > 0:
-            rec["simple_return"] = ((end_val / initial) - 1) * 100
-        else:
-            rec["simple_return"] = 0.0
+        rec["end_value"] = endv
+        initial = rec.get(C.OPERATION_VALUE.value, 0.0)
+        rec["simple_return"] = ((endv / initial) - 1) * 100 if initial >= 0.01 and endv > 0 else 0.0
 
-        # Annualized return
-        holding = rec["holding_days"]
-        if holding >= 30 and initial >= 0.01 and end_val > 0:
-            value_ratio = end_val / initial
+        holding = rec.get("holding_days", 0)
+        if holding >= 30 and initial >= 0.01 and endv > 0:
+            value_ratio = endv / initial
             if value_ratio > 0:
                 try:
                     exponent = 365.0 / holding
@@ -441,10 +463,12 @@ def calculate_operations_returns(
         else:
             rec["annualized_return"] = 0.0
 
-    if not buy_records:
+        final_records.append(rec)
+
+    if not final_records:
         return pl.DataFrame()
 
-    return pl.DataFrame(buy_records)
+    return pl.DataFrame(final_records)
 
 
 def calculate_portfolio_monthly_returns(
@@ -456,204 +480,199 @@ def calculate_portfolio_monthly_returns(
 ) -> pl.DataFrame:
     """Calculate monthly portfolio returns using Modified Dietz method.
 
-    The Modified Dietz method properly accounts for cash flows by time-weighting
-    them based on when they occur during the period.
-    Supports semiannual coupon payments for bonds with "Juros Semestrais".
-    Coupons are treated as distributions (negative cash flows).
-
-    Args:
-        operations: Polars DataFrame with operation_date, bond_type, maturity_date,
-            quantity, bond_value, operation_value, operation_type columns.
-        prices: Polars DataFrame with reference_date, bond_type, maturity_date,
-            sell_price columns.
-        start_date: Start date for calculations (defaults to first operation).
-            Accepts datetime.date or datetime.datetime.
-        end_date: End date (defaults to today).
-            Accepts datetime.date or datetime.datetime.
-        coupons: Polars DataFrame with coupon payment data (from read_interest_coupons).
-            Expected columns: bond_type, maturity_date, buyback_date, unit_price.
-            If provided, coupons are treated as distributions in the Modified
-            Dietz formula.
-
-    Returns:
-        Polars DataFrame with monthly returns and cumulative returns.
-
-    Example:
-        >>> # See calculate_operations_returns for data structure
-        >>> monthly_returns = calculate_portfolio_monthly_returns(operations, prices)
+    Returns DataFrame with columns: month, monthly_return, cumulative_return,
+    portfolio_value, net_cash_flow.
     """
-    if operations.height == 0:
+    if operations.height == 0 or prices.height == 0:
         return pl.DataFrame()
 
-    # Filter out rows with zero bond value
-    ops = operations.filter(pl.col(C.BOND_VALUE.value) > 0)
-
-    if ops.height == 0:
-        return pl.DataFrame()
-
+    # Determine date range from operations if not provided
+    op_dates = operations[C.OPERATION_DATE.value]
     if start_date is None:
-        start_date = ops[C.OPERATION_DATE.value].min()
-    if isinstance(start_date, datetime):
-        start_date = start_date.date()
-
+        min_date = op_dates.min()
+        if isinstance(min_date, datetime):
+            start_date = min_date.date()
+        else:
+            start_date = min_date
     if end_date is None:
-        end_date = date.today()
-    elif isinstance(end_date, datetime):
-        end_date = end_date.date()
+        max_date = op_dates.max()
+        if isinstance(max_date, datetime):
+            end_date = max_date.date()
+        else:
+            end_date = max_date
 
-    # Generate monthly date range
+    if start_date > end_date:
+        return pl.DataFrame()
+
+    # Build price lookup: (bond_type, maturity_date, reference_date) -> sell_price
+    price_dict = {}
+    for row in prices.iter_rows(named=True):
+        mat = row[C.MATURITY_DATE.value]
+        if isinstance(mat, datetime):
+            mat_key = mat.date()
+        else:
+            mat_key = mat
+        ref = row[C.REFERENCE_DATE.value]
+        if isinstance(ref, datetime):
+            ref_key = ref.date()
+        else:
+            ref_key = ref
+        price_dict[(row[C.BOND_TYPE.value], mat_key, ref_key)] = row[C.SELL_PRICE.value]
+
+    def _get_latest_price(bond_type: str, maturity_date: date, ref_date: date) -> Optional[float]:
+        """Get the latest available price on or before ref_date."""
+        mat_key = maturity_date
+        ref_key = ref_date
+        # Try exact match first
+        if (bond_type, mat_key, ref_key) in price_dict:
+            return price_dict[(bond_type, mat_key, ref_key)]
+        # Fall back to scanning backwards (inefficient but robust)
+        candidates = [
+            (k, v) for k, v in price_dict.items() if k[0] == bond_type and k[1] == mat_key and k[2] <= ref_key
+        ]
+        if candidates:
+            candidates.sort(key=lambda x: x[0][2], reverse=True)
+            return candidates[0][1]
+        return None
+
+    # Generate monthly periods
     months = _generate_monthly_dates(start_date, end_date)
+    if not months:
+        return pl.DataFrame()
 
-    # Convert ops and prices to list of dicts for iteration
-    ops_records = ops.to_dicts()
-    prices_records = prices.to_dicts() if prices.height > 0 else []
-
-    results = []
-    cumulative_return = 0.0
-
-    # Track positions: (bond_type, maturity_date) -> {quantity, cost_basis}
-    positions: dict[tuple, dict] = {}
-
-    def _get_latest_price(bond_type, maturity_date, as_of_date):
-        """Get latest price for a bond up to as_of_date."""
-        best_price = None
-        best_date = None
-        for p in prices_records:
-            if p[C.BOND_TYPE.value] != bond_type:
-                continue
-            if p[C.MATURITY_DATE.value] != maturity_date:
-                continue
-            ref_date = p[C.REFERENCE_DATE.value]
-            if isinstance(ref_date, datetime):
-                ref_d = ref_date.date()
-            elif isinstance(ref_date, date):
-                ref_d = ref_date
-            else:
-                continue
-            if ref_d <= as_of_date:
-                if best_date is None or ref_d > best_date:
-                    best_date = ref_d
-                    best_price = p[C.SELL_PRICE.value]
-        return best_price
+    # Track positions: (bond_type, maturity_date) -> {quantity, avg_cost}
+    positions = {}
+    monthly_results = []
 
     for month_start in months:
         month_end = _last_day_of_month(month_start)
-        month_start_dt = datetime(month_start.year, month_start.month, month_start.day)
-        month_end_dt = datetime(month_end.year, month_end.month, month_end.day)
+        month_end_dt = datetime(month_end.year, month_end.month, month_end.day, 23, 59, 59)
 
         # Get operations in this month
-        month_ops = []
-        for op in ops_records:
-            op_date = op[C.OPERATION_DATE.value]
-            if isinstance(op_date, datetime):
-                op_d = op_date.date()
-            elif isinstance(op_date, date):
-                op_d = op_date
-            else:
-                continue
-            if month_start <= op_d <= month_end:
-                month_ops.append(op)
+        month_ops = operations.filter(
+            (pl.col(C.OPERATION_DATE.value) >= datetime(month_start.year, month_start.month, month_start.day))
+            & (pl.col(C.OPERATION_DATE.value) <= month_end_dt)
+        )
 
-        # Calculate portfolio value at start of month (BMV)
+        # Calculate BMV (Beginning Market Value) using month_start prices
         bmv = 0.0
+        if positions:
+            for (bond_type, maturity_date), pos in positions.items():
+                price = _get_latest_price(bond_type, maturity_date, month_start)
+                if price is not None:
+                    bmv += pos["quantity"] * price
+
+        # Process operations
+        net_cash_flow = 0.0
+        for op in month_ops.iter_rows(named=True):
+            op_type = op[C.OPERATION_TYPE.value]
+            bond_type = op[C.BOND_TYPE.value]
+            mat = op[C.MATURITY_DATE.value]
+            if isinstance(mat, datetime):
+                mat = mat.date()
+            qty = float(op.get(C.QUANTITY.value) or 0.0)
+            value = float(op.get(C.OPERATION_VALUE.value) or 0.0)
+
+            key = (bond_type, mat)
+
+            if op_type == OperationType.BUY.value:
+                net_cash_flow -= value
+                if key not in positions:
+                    positions[key] = {"quantity": 0.0, "avg_cost": 0.0}
+                old_qty = positions[key]["quantity"]
+                old_cost = positions[key]["avg_cost"]
+                new_qty = old_qty + qty
+                positions[key]["avg_cost"] = ((old_qty * old_cost) + value) / new_qty if new_qty > 0.0 else 0.0
+                positions[key]["quantity"] = new_qty
+
+            elif op_type == OperationType.SELL.value:
+                net_cash_flow += value
+                if key in positions:
+                    positions[key]["quantity"] -= abs(qty)
+                    if positions[key]["quantity"] <= 0:
+                        del positions[key]
+
+        # Add coupon income for the month
+        coupon_income = 0.0
+        if coupons is not None and coupons.height > 0:
+            month_coupons = coupons.filter(
+                (pl.col(C.BUYBACK_DATE.value) >= datetime(month_start.year, month_start.month, month_start.day))
+                & (pl.col(C.BUYBACK_DATE.value) <= month_end_dt)
+            )
+            for cpn in month_coupons.iter_rows(named=True):
+                bond_type = cpn[C.BOND_TYPE.value]
+                mat = cpn[C.MATURITY_DATE.value]
+                if isinstance(mat, datetime):
+                    mat = mat.date()
+                key = (bond_type, mat)
+                if key in positions:
+                    unit_cpn = float(cpn.get(C.UNIT_PRICE.value) or 0.0)
+                    coupon_income += positions[key]["quantity"] * unit_cpn
+
+        net_cash_flow += coupon_income
+
+        # Calculate EMV (Ending Market Value) using month_end prices
+        emv = 0.0
         if positions:
             for (bond_type, maturity_date), pos in positions.items():
                 price = _get_latest_price(bond_type, maturity_date, month_end)
                 if price is not None:
-                    bmv += pos["quantity"] * price
+                    emv += pos["quantity"] * price
 
-        # Process operations and calculate weighted cash flow
-        net_cash_flow = 0.0
-        weighted_cash_flow = 0.0
-        total_days = (month_end - month_start).days + 1
-
-        for op in month_ops:
-            bond_key = (op[C.BOND_TYPE.value], op[C.MATURITY_DATE.value])
-            is_buy = op[C.OPERATION_TYPE.value] in ["C", "D", "buy"]
-
-            op_date = op[C.OPERATION_DATE.value]
-            if isinstance(op_date, datetime):
-                op_d = op_date.date()
-            elif isinstance(op_date, date):
-                op_d = op_date
-            else:
-                op_d = month_start
-
-            days_remaining = (month_end - op_d).days
-            weight = days_remaining / total_days if total_days > 0 else 0.0
-
-            if is_buy:
-                cash_flow = op[C.OPERATION_VALUE.value]
-                net_cash_flow += cash_flow
-                weighted_cash_flow += cash_flow * weight
-
-                if bond_key not in positions:
-                    positions[bond_key] = {"quantity": 0.0, "cost_basis": 0.0}
-                positions[bond_key]["quantity"] += op[C.QUANTITY.value]
-                positions[bond_key]["cost_basis"] += op[C.OPERATION_VALUE.value]
-            else:
-                cash_flow = -abs(op[C.OPERATION_VALUE.value])
-                net_cash_flow += cash_flow
-                weighted_cash_flow += cash_flow * weight
-
-                if bond_key in positions:
-                    positions[bond_key]["quantity"] += op[C.QUANTITY.value]  # negative quantity
-
-        # Process coupon payments in this month
-        if coupons is not None and coupons.height > 0 and positions:
-            month_coupon_records = coupons.filter(
-                (pl.col(C.BUYBACK_DATE.value) >= month_start_dt) & (pl.col(C.BUYBACK_DATE.value) <= month_end_dt)
-            ).to_dicts()
-            for coupon_row in month_coupon_records:
-                coupon_key = (coupon_row[C.BOND_TYPE.value], coupon_row[C.MATURITY_DATE.value])
-                if coupon_key in positions and positions[coupon_key]["quantity"] > 0:
-                    coupon_amount = positions[coupon_key]["quantity"] * coupon_row[C.UNIT_PRICE.value]
-                    coupon_date = coupon_row[C.BUYBACK_DATE.value]
-                    if isinstance(coupon_date, datetime):
-                        coupon_d = coupon_date.date()
-                    elif isinstance(coupon_date, date):
-                        coupon_d = coupon_date
-                    else:
-                        coupon_d = month_start
-                    days_remaining = (month_end - coupon_d).days
-                    weight = days_remaining / total_days if total_days > 0 else 0.0
-                    net_cash_flow -= coupon_amount
-                    weighted_cash_flow -= coupon_amount * weight
-
-        # Calculate portfolio value at end of month (EMV)
-        emv = 0.0
-        if positions:
-            for (bond_type, maturity_date), pos in positions.items():
-                if pos["quantity"] > 0:
-                    price = _get_latest_price(bond_type, maturity_date, month_end)
-                    if price is not None:
-                        emv += pos["quantity"] * price
-
-        # Calculate Modified Dietz return
-        denominator = bmv + weighted_cash_flow
+        # Modified Dietz monthly return
+        denominator = bmv + (net_cash_flow / 2.0)
         if denominator > 0.01:
             monthly_return = ((emv - bmv - net_cash_flow) / denominator) * 100
-            monthly_return = max(-100.0, min(1000.0, monthly_return))
-        elif emv > 0 and bmv < 0.01:
-            monthly_return = 100.0  # New portfolio
         else:
             monthly_return = 0.0
 
-        # Update cumulative return
-        cumulative_return = (1 + cumulative_return / 100) * (1 + monthly_return / 100) - 1
-        cumulative_return *= 100
-
-        results.append(
+        monthly_results.append(
             {
-                "month": month_start_dt,
+                "month": month_start,
                 "monthly_return": monthly_return,
-                "cumulative_return": cumulative_return,
                 "portfolio_value": emv,
                 "net_cash_flow": net_cash_flow,
             }
         )
 
-    if not results:
+    if not monthly_results:
         return pl.DataFrame()
 
-    return pl.DataFrame(results)
+    df = pl.DataFrame(monthly_results)
+
+    # Calculate cumulative returns
+    cumulative = 1.0
+    cum_returns = []
+    for ret in df["monthly_return"].to_list():
+        cumulative *= 1 + ret / 100
+        cum_returns.append((cumulative - 1) * 100)
+
+    df = df.with_columns(pl.Series("cumulative_return", cum_returns))
+
+    return df
+
+
+def _generate_monthly_dates(start: date, end: date) -> list[date]:
+    """Generate list of first day of each month between start and end dates."""
+    if start > end:
+        return []
+    months = []
+    current = date(start.year, start.month, 1)
+    end_month = date(end.year, end.month, 1)
+    while current <= end_month:
+        months.append(current)
+        # Move to next month
+        if current.month == 12:
+            current = date(current.year + 1, 1, 1)
+        else:
+            current = date(current.year, current.month + 1, 1)
+    return months
+
+
+def _last_day_of_month(d: date) -> date:
+    """Return the last day of the month for a given date."""
+    if d.month == 12:
+        next_month = date(d.year + 1, 1, 1)
+    else:
+        next_month = date(d.year, d.month + 1, 1)
+    return next_month - timedelta(days=1)
