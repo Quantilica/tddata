@@ -218,7 +218,7 @@ def aggregate_value_over_time(
 
     res = df.group_by_dynamic(date_col, every=freq).agg(pl.col(value_col).sum())
     if date_col in res.columns:
-        res = res.rename({dateCol: "month"})
+        res = res.rename({date_col: "month"})
     return res.sort("month")
 
 
@@ -477,11 +477,22 @@ def calculate_portfolio_monthly_returns(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     coupons: Optional[pl.DataFrame] = None,
+    price_lookup: Optional[dict] = None,
+    coupon_lookup: Optional[dict] = None,
 ) -> pl.DataFrame:
     """Calculate monthly portfolio returns using Modified Dietz method.
 
     Returns DataFrame with columns: month, monthly_return, cumulative_return,
     portfolio_value, net_cash_flow.
+
+    Args:
+        operations: Operations DataFrame
+        prices: Prices DataFrame
+        start_date: Optional start date for calculation period
+        end_date: Optional end date for calculation period
+        coupons: Optional coupons DataFrame
+        price_lookup: Optional pre-built price lookup dict for performance
+        coupon_lookup: Optional pre-built coupon lookup dict for performance
     """
     if operations.height == 0 or prices.height == 0:
         return pl.DataFrame()
@@ -504,35 +515,41 @@ def calculate_portfolio_monthly_returns(
     if start_date > end_date:
         return pl.DataFrame()
 
-    # Build price lookup: (bond_type, maturity_date, reference_date) -> sell_price
-    price_dict = {}
-    for row in prices.iter_rows(named=True):
-        mat = row[C.MATURITY_DATE.value]
-        if isinstance(mat, datetime):
-            mat_key = mat.date()
-        else:
-            mat_key = mat
-        ref = row[C.REFERENCE_DATE.value]
-        if isinstance(ref, datetime):
-            ref_key = ref.date()
-        else:
-            ref_key = ref
-        price_dict[(row[C.BOND_TYPE.value], mat_key, ref_key)] = row[C.SELL_PRICE.value]
+    # Build efficient price lookup if not provided
+    if price_lookup is None:
+        # Use optimized nested dict structure: {bond_type: {maturity_date: {ref_date: price}}}
+        price_lookup = {}
+        for row in prices.iter_rows(named=True):
+            bond_type = row[C.BOND_TYPE.value]
+            mat = row[C.MATURITY_DATE.value]
+            mat_key = mat.date() if isinstance(mat, datetime) else mat
+            ref = row[C.REFERENCE_DATE.value]
+            ref_key = ref.date() if isinstance(ref, datetime) else ref
+            price = row[C.SELL_PRICE.value]
 
-    def _get_latest_price(bond_type: str, maturity_date: date, ref_date: date) -> Optional[float]:
-        """Get the latest available price on or before ref_date."""
-        mat_key = maturity_date
-        ref_key = ref_date
-        # Try exact match first
-        if (bond_type, mat_key, ref_key) in price_dict:
-            return price_dict[(bond_type, mat_key, ref_key)]
-        # Fall back to scanning backwards (inefficient but robust)
-        candidates = [
-            (k, v) for k, v in price_dict.items() if k[0] == bond_type and k[1] == mat_key and k[2] <= ref_key
-        ]
+            if bond_type not in price_lookup:
+                price_lookup[bond_type] = {}
+            if mat_key not in price_lookup[bond_type]:
+                price_lookup[bond_type][mat_key] = {}
+            price_lookup[bond_type][mat_key][ref_key] = price
+
+    def _get_latest_price_fast(bond_type: str, maturity_date: date, ref_date: date) -> Optional[float]:
+        """Fast price lookup using nested dict structure."""
+        if bond_type not in price_lookup:
+            return None
+        if maturity_date not in price_lookup[bond_type]:
+            return None
+
+        # Try exact match first (most common case)
+        mat_dict = price_lookup[bond_type][maturity_date]
+        if ref_date in mat_dict:
+            return mat_dict[ref_date]
+
+        # Fall back to latest price before ref_date
+        candidates = {d: p for d, p in mat_dict.items() if d <= ref_date}
         if candidates:
-            candidates.sort(key=lambda x: x[0][2], reverse=True)
-            return candidates[0][1]
+            latest_date = max(candidates.keys())
+            return candidates[latest_date]
         return None
 
     # Generate monthly periods
@@ -558,7 +575,7 @@ def calculate_portfolio_monthly_returns(
         bmv = 0.0
         if positions:
             for (bond_type, maturity_date), pos in positions.items():
-                price = _get_latest_price(bond_type, maturity_date, month_start)
+                price = _get_latest_price_fast(bond_type, maturity_date, month_start)
                 if price is not None:
                     bmv += pos["quantity"] * price
 
@@ -592,22 +609,36 @@ def calculate_portfolio_monthly_returns(
                     if positions[key]["quantity"] <= 0:
                         del positions[key]
 
-        # Add coupon income for the month
+        # Add coupon income for the month (using coupon_lookup if available)
         coupon_income = 0.0
         if coupons is not None and coupons.height > 0:
-            month_coupons = coupons.filter(
-                (pl.col(C.BUYBACK_DATE.value) >= datetime(month_start.year, month_start.month, month_start.day))
-                & (pl.col(C.BUYBACK_DATE.value) <= month_end_dt)
-            )
-            for cpn in month_coupons.iter_rows(named=True):
-                bond_type = cpn[C.BOND_TYPE.value]
-                mat = cpn[C.MATURITY_DATE.value]
-                if isinstance(mat, datetime):
-                    mat = mat.date()
-                key = (bond_type, mat)
-                if key in positions:
-                    unit_cpn = float(cpn.get(C.UNIT_PRICE.value) or 0.0)
-                    coupon_income += positions[key]["quantity"] * unit_cpn
+            if coupon_lookup is None:
+                # Build lookup on demand
+                month_coupons = coupons.filter(
+                    (pl.col(C.BUYBACK_DATE.value) >= datetime(month_start.year, month_start.month, month_start.day))
+                    & (pl.col(C.BUYBACK_DATE.value) <= month_end_dt)
+                )
+                for cpn in month_coupons.iter_rows(named=True):
+                    bond_type = cpn[C.BOND_TYPE.value]
+                    mat = cpn[C.MATURITY_DATE.value]
+                    if isinstance(mat, datetime):
+                        mat = mat.date()
+                    key = (bond_type, mat)
+                    if key in positions:
+                        unit_cpn = float(cpn.get(C.UNIT_PRICE.value) or 0.0)
+                        coupon_income += positions[key]["quantity"] * unit_cpn
+            else:
+                # Use pre-built coupon lookup
+                for (bond_type, maturity_date), position_qty in [(k[0], k[1]) for k in positions.keys()]:
+                    key = (bond_type, maturity_date)
+                    if key in coupon_lookup:
+                        for coupon_date, unit_price in coupon_lookup[key]:
+                            if (
+                                datetime(month_start.year, month_start.month, month_start.day)
+                                <= coupon_date
+                                <= month_end_dt
+                            ):
+                                coupon_income += positions.get(key, {}).get("quantity", 0.0) * unit_price
 
         net_cash_flow += coupon_income
 
@@ -615,7 +646,7 @@ def calculate_portfolio_monthly_returns(
         emv = 0.0
         if positions:
             for (bond_type, maturity_date), pos in positions.items():
-                price = _get_latest_price(bond_type, maturity_date, month_end)
+                price = _get_latest_price_fast(bond_type, maturity_date, month_end)
                 if price is not None:
                     emv += pos["quantity"] * price
 
