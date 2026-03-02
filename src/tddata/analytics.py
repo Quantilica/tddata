@@ -264,6 +264,13 @@ def calculate_operations_returns(
     if operations.height == 0:
         return pl.DataFrame()
 
+    # Filter out operations with zero bond value
+    if C.BOND_VALUE.value in operations.columns:
+        operations = operations.filter(pl.col(C.BOND_VALUE.value) != 0)
+
+    if operations.height == 0:
+        return pl.DataFrame()
+
     if current_date is None:
         current_date = date.today()
     current_date_dt = datetime(current_date.year, current_date.month, current_date.day)
@@ -593,7 +600,7 @@ def calculate_portfolio_monthly_returns(
             key = (bond_type, mat)
 
             if op_type == OperationType.BUY.value:
-                net_cash_flow -= value
+                net_cash_flow += value
                 if key not in positions:
                     positions[key] = {"quantity": 0.0, "avg_cost": 0.0}
                 old_qty = positions[key]["quantity"]
@@ -603,7 +610,7 @@ def calculate_portfolio_monthly_returns(
                 positions[key]["quantity"] = new_qty
 
             elif op_type == OperationType.SELL.value:
-                net_cash_flow += value
+                net_cash_flow -= value
                 if key in positions:
                     positions[key]["quantity"] -= abs(qty)
                     if positions[key]["quantity"] <= 0:
@@ -640,7 +647,7 @@ def calculate_portfolio_monthly_returns(
                             ):
                                 coupon_income += positions.get(key, {}).get("quantity", 0.0) * unit_price
 
-        net_cash_flow += coupon_income
+        net_cash_flow -= coupon_income
 
         # Calculate EMV (Ending Market Value) using month_end prices
         emv = 0.0
