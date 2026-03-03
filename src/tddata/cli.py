@@ -30,9 +30,7 @@ from .constants import (
 
 
 def set_parser():
-    parser = argparse.ArgumentParser(
-        description="Tesouro Direto Data Downloader & Converter"
-    )
+    parser = argparse.ArgumentParser(description="Tesouro Direto Data Downloader & Converter")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # Download command
@@ -89,27 +87,11 @@ def set_parser():
     try:
         from . import converter  # noqa: F401
 
-        convert_parser = subparsers.add_parser("convert", help="Convert CSV to Parquet")
+        convert_parser = subparsers.add_parser("convert", help="Convert all latest CSVs to Parquet")
         convert_parser.add_argument(
-            "file",
+            "data_dir",
             type=Path,
-            help="Path to CSV file to convert",
-        )
-        convert_parser.add_argument(
-            "--type",
-            dest="dataset_type",
-            default="infer",
-            choices=[
-                "prices",
-                "operations",
-                "investors",
-                "stock",
-                "buybacks",
-                "sales",
-                "maturities",
-                "infer",
-            ],
-            help="Dataset type (default: infer from filename)",
+            help="Data directory containing CSV files",
         )
     except ImportError:
         pass  # Convert command not available without analysis extras
@@ -255,16 +237,25 @@ def main():
 
     elif args.command == "convert":
         try:
-            from . import converter
+            from . import converter, storage
         except ImportError:
             print("Error: Convert feature requires analysis extras.")
             print("Install with: pip install tddata[analysis]")
             return
 
-        try:
-            output_path = converter.convert_to_parquet(
-                args.file, dataset_type=args.dataset_type
-            )
-            print(f"Successfully converted to {output_path}")
-        except Exception as e:
-            print(f"Error converting file: {e}")
+        if not args.data_dir.exists() or not args.data_dir.is_dir():
+            print(f"Error: Directory '{args.data_dir}' does not exist or is not a directory.")
+            return
+
+        latest_files = storage.get_latest_files(args.data_dir)
+        if not latest_files:
+            print(f"No CSV files found in '{args.data_dir}'.")
+            return
+
+        print(f"Found {len(latest_files)} latest files to convert...")
+        for file_path in latest_files:
+            try:
+                output_path = converter.convert_to_parquet(file_path)
+                print(f"Successfully converted {file_path.name} to {output_path.name}")
+            except Exception as e:
+                print(f"Error converting {file_path.name}: {e}")
