@@ -224,25 +224,29 @@ A deposit early in the month has a weight close to 1.0, while a deposit at the e
 **Example:**
 ```python
 # Calculate monthly returns for entire portfolio with coupon support
-import polars as pl
-import matplotlib.pyplot as plt
+import altair as alt
+from datetime import date
+from tddata.analytics import calculate_portfolio_monthly_returns
 
-monthly = analytics.calculate_portfolio_monthly_returns(
+monthly = calculate_portfolio_monthly_returns(
     operations,
     prices,
-    start_date=pl.Timestamp('2024-01-01'),
-    end_date=pl.Timestamp('2024-12-31'),
-    coupons=coupons  # Include coupon distributions
+    start_date=date(2024, 1, 1),
+    end_date=date(2024, 12, 31),
+    coupons=coupons,  # Include coupon distributions
 )
 
 # Plot cumulative returns
-plt.figure(figsize=(12, 6))
-plt.plot(monthly['month'].to_numpy(), monthly['cumulative_return'].to_numpy())
-plt.title('Portfolio Cumulative Return (with Coupons)')
-plt.xlabel('Month')
-plt.ylabel('Cumulative Return (%)')
-plt.grid(True)
-plt.show()
+chart = (
+    alt.Chart(monthly.to_pandas())
+    .mark_line()
+    .encode(
+        x=alt.X("month:T", title="Month"),
+        y=alt.Y("cumulative_return:Q", title="Cumulative Return (%)"),
+    )
+    .properties(title="Portfolio Cumulative Return (with Coupons)", width=720, height=320)
+)
+chart.save("portfolio_cumulative_return.html")
 
 # Summary statistics
 print(f"Best month: {monthly['monthly_return'].max():.2f}%")
