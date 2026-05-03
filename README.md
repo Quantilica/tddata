@@ -1,7 +1,7 @@
 # tddata - Download, Analyze & Plot Brazilian Tesouro Direto's Data (CKAN API)
 
-![GitHub](https://img.shields.io/github/license/dankkom/tddata?style=flat-square)
-[![Tests](https://github.com/dankkom/tddata/actions/workflows/run-tests.yml/badge.svg)](https://github.com/dankkom/tddata/actions/workflows/run-tests.yml)
+![GitHub](https://img.shields.io/github/license/Quantilica/tddata?style=flat-square)
+[![Tests](https://github.com/Quantilica/tddata/actions/workflows/run-tests.yml/badge.svg)](https://github.com/Quantilica/tddata/actions/workflows/run-tests.yml)
 
 **tddata** is a powerful Python package designed to simplify the process of downloading, reading, and visualizing historical data from Brazil's Tesouro Direto program. It leverages the official CKAN API (Tesouro Transparente) to fetch the most up-to-date datasets.
 
@@ -19,12 +19,12 @@ This package is available via GitHub. You can install it using `pip`:
 
 **Download only (minimal dependencies):**
 ```shell
-pip install "git+https://github.com/dankkom/tddata#egg=tddata"
+pip install "git+https://github.com/Quantilica/tddata#egg=tddata"
 ```
 
 **Full installation with reading, analysis and plotting features:**
 ```shell
-pip install "git+https://github.com/dankkom/tddata#egg=tddata[analysis]"
+pip install "git+https://github.com/Quantilica/tddata#egg=tddata[analysis]"
 ```
 
 The minimal installation includes only `httpx` and `tqdm` for downloading data. The `[analysis]` extras add `polars` (CSV parsing, analytics) and `altair[save]` (charts).

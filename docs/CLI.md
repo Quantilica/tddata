@@ -10,12 +10,12 @@ The CLI is included with the `tddata` package. Install it using one of the follo
 
 **Minimal installation (download only):**
 ```bash
-pip install "git+https://github.com/dankkom/tddata#egg=tddata"
+pip install "git+https://github.com/Quantilica/tddata#egg=tddata"
 ```
 
 **Full installation (with analysis features):**
 ```bash
-pip install "git+https://github.com/dankkom/tddata#egg=tddata[analysis]"
+pip install "git+https://github.com/Quantilica/tddata#egg=tddata[analysis]"
 ```
 
 The `analysis` extras are required for the `convert` command.
@@ -222,7 +222,7 @@ tddata: command not found
 Error: Convert feature requires analysis extras.
 Install with: pip install tddata[analysis]
 ```
-**Solution:** Install with analysis extras: `pip install "git+https://github.com/dankkom/tddata#egg=tddata[analysis]"`
+**Solution:** Install with analysis extras: `pip install "git+https://github.com/Quantilica/tddata#egg=tddata[analysis]"`
 
 **Invalid dataset:**
 ```

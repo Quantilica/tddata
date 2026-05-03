@@ -16,7 +16,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 dependencies = [
@@ -38,8 +38,8 @@ line-length = 120
 lint.select = ["I"]
 
 [project.urls]
-Homepage = "https://github.com/dankkom/tddata"
-Issues = "https://github.com/dankkom/tddata/issues"
+Homepage = "https://github.com/Quantilica/tddata"
+Issues = "https://github.com/Quantilica/tddata/issues"
 
 [build-system]
 requires = ["setuptools"]
