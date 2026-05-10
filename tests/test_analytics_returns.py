@@ -5,11 +5,11 @@ from datetime import date, datetime, timedelta
 
 import polars as pl
 
-from tddata.analytics import (
+from tesouro_direto_fetcher.analytics import (
     calculate_operations_returns,
     calculate_portfolio_monthly_returns,
 )
-from tddata.constants import Column as C
+from tesouro_direto_fetcher.constants import Column as C
 
 # Bond types that pay semiannual coupons
 BOND_IPCA_JS = "Tesouro IPCA+ com Juros Semestrais"

@@ -1,21 +1,21 @@
-# tddata CLI Documentation
+# tesouro-direto-fetcher CLI Documentation
 
 ## Overview
 
-The `tddata` command-line interface (CLI) provides a convenient way to download, inspect, and convert Brazilian Tesouro Direto data from the official CKAN API. The CLI supports three main operations: downloading datasets, getting download information without downloading, and converting CSV files to Parquet format.
+The `tesouro-direto-fetcher` command-line interface (CLI) provides a convenient way to download, inspect, and convert Brazilian Tesouro Direto data from the official CKAN API. The CLI supports three main operations: downloading datasets, getting download information without downloading, and converting CSV files to Parquet format.
 
 ## Installation
 
-The CLI is included with the `tddata` package. Install it using one of the following methods:
+The CLI is included with the `tesouro-direto-fetcher` package. Install it using one of the following methods:
 
 **Minimal installation (download only):**
 ```bash
-pip install "git+https://github.com/Quantilica/tddata#egg=tddata"
+pip install "git+https://github.com/Quantilica/tesouro-direto-fetcher#egg=tesouro-direto-fetcher"
 ```
 
 **Full installation (with analysis features):**
 ```bash
-pip install "git+https://github.com/Quantilica/tddata#egg=tddata[analysis]"
+pip install "git+https://github.com/Quantilica/tesouro-direto-fetcher#egg=tesouro-direto-fetcher[analysis]"
 ```
 
 The `analysis` extras are required for the `convert` command.
@@ -23,7 +23,7 @@ The `analysis` extras are required for the `convert` command.
 ## General Usage
 
 ```bash
-tddata <command> [options]
+tesouro-direto-fetcher <command> [options]
 ```
 
 ### Available Commands
@@ -44,7 +44,7 @@ Download one or more datasets to a local directory.
 
 **Syntax:**
 ```bash
-tddata download [-o OUTPUT_DIR] [--dataset DATASET]
+tesouro-direto-fetcher download [-o OUTPUT_DIR] [--dataset DATASET]
 ```
 
 **Options:**
@@ -65,21 +65,21 @@ tddata download [-o OUTPUT_DIR] [--dataset DATASET]
 
 ```bash
 # Download prices dataset to default data directory
-tddata download
+tesouro-direto-fetcher download
 
 # Download prices dataset to custom directory
-tddata download -o ./tesouro_data
+tesouro-direto-fetcher download -o ./tesouro_data
 
 # Download stock data
-tddata download --dataset stock -o ./data
+tesouro-direto-fetcher download --dataset stock -o ./data
 
 # Download all datasets
-tddata download --dataset all -o ./data
+tesouro-direto-fetcher download --dataset all -o ./data
 
 # Download operations and investors data
 # Note: Use separate commands for multiple specific datasets
-tddata download --dataset operations -o ./data
-tddata download --dataset investors -o ./data
+tesouro-direto-fetcher download --dataset operations -o ./data
+tesouro-direto-fetcher download --dataset investors -o ./data
 ```
 
 **Output:**
@@ -91,7 +91,7 @@ Display information about datasets that would be downloaded, including file size
 
 **Syntax:**
 ```bash
-tddata info [-o OUTPUT_DIR] [--dataset DATASET]
+tesouro-direto-fetcher info [-o OUTPUT_DIR] [--dataset DATASET]
 ```
 
 **Options:**
@@ -112,13 +112,13 @@ tddata info [-o OUTPUT_DIR] [--dataset DATASET]
 
 ```bash
 # Get info about prices dataset
-tddata info --dataset prices
+tesouro-direto-fetcher info --dataset prices
 
 # Get info about all datasets
-tddata info --dataset all -o ./data
+tesouro-direto-fetcher info --dataset all -o ./data
 
 # Check stock data with custom output directory
-tddata info --dataset stock -o ./tesouro_data
+tesouro-direto-fetcher info --dataset stock -o ./tesouro_data
 ```
 
 **Sample Output:**
@@ -153,11 +153,11 @@ Total size: 13,788,359 bytes (13.15 MB)
 
 ### `convert`
 
-Convert CSV files downloaded by tddata to Parquet format for better performance and storage efficiency. This command is only available when the `analysis` optional dependencies are installed.
+Convert CSV files downloaded by tesouro-direto-fetcher to Parquet format for better performance and storage efficiency. This command is only available when the `analysis` optional dependencies are installed.
 
 **Syntax:**
 ```bash
-tddata convert <file> [--type DATASET_TYPE]
+tesouro-direto-fetcher convert <file> [--type DATASET_TYPE]
 ```
 
 **Arguments:**
@@ -180,13 +180,13 @@ tddata convert <file> [--type DATASET_TYPE]
 
 ```bash
 # Convert a prices CSV file with automatic type detection
-tddata convert data/taxas-dos-titulos-ofertados-pelo-tesouro-direto@20251230T102010.csv
+tesouro-direto-fetcher convert data/taxas-dos-titulos-ofertados-pelo-tesouro-direto@20251230T102010.csv
 
 # Convert with explicit type specification
-tddata convert data/operacoes-do-tesouro-direto@20251201T102018.csv --type operations
+tesouro-direto-fetcher convert data/operacoes-do-tesouro-direto@20251201T102018.csv --type operations
 
 # Convert investors data
-tddata convert data/investidores-do-tesouro-direto@20251205T131939.csv --type investors
+tesouro-direto-fetcher convert data/investidores-do-tesouro-direto@20251205T131939.csv --type investors
 ```
 
 **Output:**
@@ -213,21 +213,21 @@ The following dataset types are supported:
 
 **Command not found:**
 ```
-tddata: command not found
+tesouro-direto-fetcher: command not found
 ```
-**Solution:** Ensure `tddata` is installed and available in your PATH, or use `uv run tddata` if using uv.
+**Solution:** Ensure `tesouro-direto-fetcher` is installed and available in your PATH, or use `uv run tesouro-direto-fetcher` if using uv.
 
 **Convert command not available:**
 ```
 Error: Convert feature requires analysis extras.
-Install with: pip install tddata[analysis]
+Install with: pip install tesouro-direto-fetcher[analysis]
 ```
-**Solution:** Install with analysis extras: `pip install "git+https://github.com/Quantilica/tddata#egg=tddata[analysis]"`
+**Solution:** Install with analysis extras: `pip install "git+https://github.com/Quantilica/tesouro-direto-fetcher#egg=tesouro-direto-fetcher[analysis]"`
 
 **Invalid dataset:**
 ```
-usage: tddata download [-o OUTPUT_DIR] [--dataset {prices,operations,investors,stock,buybacks,sales,all}]
-tddata download: error: argument --dataset: invalid choice: 'invalid_dataset'
+usage: tesouro-direto-fetcher download [-o OUTPUT_DIR] [--dataset {prices,operations,investors,stock,buybacks,sales,all}]
+tesouro-direto-fetcher download: error: argument --dataset: invalid choice: 'invalid_dataset'
 ```
 **Solution:** Use one of the valid dataset choices listed in the error message.
 
@@ -257,11 +257,11 @@ To download multiple specific datasets, run separate commands:
 
 ```bash
 # Download prices and operations
-tddata download --dataset prices -o ./data
-tddata download --dataset operations -o ./data
+tesouro-direto-fetcher download --dataset prices -o ./data
+tesouro-direto-fetcher download --dataset operations -o ./data
 
 # Or use all for everything
-tddata download --dataset all -o ./data
+tesouro-direto-fetcher download --dataset all -o ./data
 ```
 
 ### Checking Before Downloading
@@ -270,10 +270,10 @@ Always use the `info` command first to see what will be downloaded:
 
 ```bash
 # Check what's available
-tddata info --dataset prices
+tesouro-direto-fetcher info --dataset prices
 
 # Then download if satisfied
-tddata download --dataset prices
+tesouro-direto-fetcher download --dataset prices
 ```
 
 ### Converting Multiple Files
@@ -283,7 +283,7 @@ Use shell globbing or loops to convert multiple files:
 ```bash
 # Convert all CSV files in data directory
 for file in data/*.csv; do
-    tddata convert "$file"
+    tesouro-direto-fetcher convert "$file"
 done
 ```
 
@@ -299,10 +299,10 @@ DATA_DIR="./tesouro_data"
 mkdir -p "$DATA_DIR"
 
 # Download all datasets
-tddata download --dataset all -o "$DATA_DIR"
+tesouro-direto-fetcher download --dataset all -o "$DATA_DIR"
 
 # Convert all CSV files to Parquet
-find "$DATA_DIR" -name "*.csv" -exec tddata convert {} \;
+find "$DATA_DIR" -name "*.csv" -exec tesouro-direto-fetcher convert {} \;
 ```
 
 ## See Also

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from tddata.downloader import get_download_info
+from tesouro_direto_fetcher.downloader import get_download_info
 
 
 class TestGetDownloadInfo(unittest.TestCase):
@@ -16,8 +16,8 @@ class TestGetDownloadInfo(unittest.TestCase):
         self.dest_dir = Path("test_data")
         self.dataset_id = "test-dataset"
 
-    @patch("tddata.downloader.get_dataset_resources")
-    @patch("tddata.downloader.get_latest_file")
+    @patch("tesouro_direto_fetcher.downloader.get_dataset_resources")
+    @patch("tesouro_direto_fetcher.downloader.get_latest_file")
     async def async_test_basic_info_retrieval(self, mock_get_latest, mock_get_resources):
         """Test basic info retrieval without existing files."""
         # Mock CKAN API response
@@ -45,8 +45,8 @@ class TestGetDownloadInfo(unittest.TestCase):
         self.assertTrue(info["would_download"])
         self.assertIsNone(info["latest_local"])
 
-    @patch("tddata.downloader.get_dataset_resources")
-    @patch("tddata.downloader.get_latest_file")
+    @patch("tesouro_direto_fetcher.downloader.get_dataset_resources")
+    @patch("tesouro_direto_fetcher.downloader.get_latest_file")
     async def async_test_skip_non_csv(self, mock_get_latest, mock_get_resources):
         """Test that non-CSV resources are filtered out."""
         # Mock CKAN API response with mixed formats
@@ -74,8 +74,8 @@ class TestGetDownloadInfo(unittest.TestCase):
         self.assertEqual(len(info_list), 1)
         self.assertEqual(info_list[0]["resource_name"], "CSV Resource")
 
-    @patch("tddata.downloader.get_dataset_resources")
-    @patch("tddata.downloader.get_latest_file")
+    @patch("tesouro_direto_fetcher.downloader.get_dataset_resources")
+    @patch("tesouro_direto_fetcher.downloader.get_latest_file")
     async def async_test_existing_file_same_size(self, mock_get_latest, mock_get_resources):
         """Test that existing files with same size are marked as not needing download."""
         # Mock CKAN API response
@@ -101,8 +101,8 @@ class TestGetDownloadInfo(unittest.TestCase):
         # Should not download
         self.assertFalse(info_list[0]["would_download"])
 
-    @patch("tddata.downloader.get_dataset_resources")
-    @patch("tddata.downloader.get_latest_file")
+    @patch("tesouro_direto_fetcher.downloader.get_dataset_resources")
+    @patch("tesouro_direto_fetcher.downloader.get_latest_file")
     async def async_test_size_conversion(self, mock_get_latest, mock_get_resources):
         """Test that size strings are converted to integers."""
         # Mock CKAN API response with size as string
@@ -125,7 +125,7 @@ class TestGetDownloadInfo(unittest.TestCase):
         self.assertIsInstance(info_list[0]["size"], int)
         self.assertEqual(info_list[0]["size"], 12345)
 
-    @patch("tddata.downloader.get_dataset_resources")
+    @patch("tesouro_direto_fetcher.downloader.get_dataset_resources")
     async def async_test_error_handling(self, mock_get_resources):
         """Test error handling when API call fails."""
         # Mock API error

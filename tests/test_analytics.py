@@ -3,8 +3,8 @@ from datetime import datetime
 
 import polars as pl
 
-from tddata import analytics
-from tddata.constants import Column
+from tesouro_direto_fetcher import analytics
+from tesouro_direto_fetcher.constants import Column
 
 
 class TestAnalytics(unittest.TestCase):

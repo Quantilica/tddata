@@ -145,7 +145,7 @@ async def download_resource(
                 dest_filepath,
                 source_id=SOURCE_ID,
                 dataset_id=dataset_id,
-                producer="tddata",
+                producer="tesouro-direto-fetcher",
                 params=None,
                 progress=_on_progress,
             )

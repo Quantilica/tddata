@@ -1,6 +1,6 @@
 """Tests for optional dependency handling.
 
-This test verifies that tddata can be imported and used correctly
+This test verifies that tesouro-direto-fetcher can be imported and used correctly
 both with and without the optional analysis extras.
 """
 
@@ -24,43 +24,43 @@ class TestOptionalDependencies(unittest.TestCase):
 
     def test_core_imports_always_available(self):
         """Core imports should always be available."""
-        import tddata
+        import tesouro_direto_fetcher
 
         # Core components should always be available
-        self.assertIsNotNone(tddata.downloader)
-        self.assertIn("downloader", tddata.__all__)
+        self.assertIsNotNone(tesouro_direto_fetcher.downloader)
+        self.assertIn("downloader", tesouro_direto_fetcher.__all__)
 
         # Constants should always be available
-        self.assertIn("Column", tddata.__all__)
-        self.assertIn("BondType", tddata.__all__)
-        self.assertIn("OperationType", tddata.__all__)
+        self.assertIn("Column", tesouro_direto_fetcher.__all__)
+        self.assertIn("BondType", tesouro_direto_fetcher.__all__)
+        self.assertIn("OperationType", tesouro_direto_fetcher.__all__)
 
     def test_analysis_extras_detection(self):
         """Test that _HAS_ANALYSIS flag is set correctly."""
-        import tddata
+        import tesouro_direto_fetcher
 
         # _HAS_ANALYSIS should be a boolean
-        self.assertIsInstance(tddata._HAS_ANALYSIS, bool)
+        self.assertIsInstance(tesouro_direto_fetcher._HAS_ANALYSIS, bool)
 
         # If analysis is available, plot and reader should be in __all__
-        if tddata._HAS_ANALYSIS:
-            self.assertIn("plot", tddata.__all__)
-            self.assertIn("reader", tddata.__all__)
-            self.assertIsNotNone(tddata.plot)
-            self.assertIsNotNone(tddata.reader)
+        if tesouro_direto_fetcher._HAS_ANALYSIS:
+            self.assertIn("plot", tesouro_direto_fetcher.__all__)
+            self.assertIn("reader", tesouro_direto_fetcher.__all__)
+            self.assertIsNotNone(tesouro_direto_fetcher.plot)
+            self.assertIsNotNone(tesouro_direto_fetcher.reader)
         else:
             # Without analysis extras, these should not be in __all__
-            self.assertNotIn("plot", tddata.__all__)
-            self.assertNotIn("reader", tddata.__all__)
+            self.assertNotIn("plot", tesouro_direto_fetcher.__all__)
+            self.assertNotIn("reader", tesouro_direto_fetcher.__all__)
 
     def test_downloader_functions_available(self):
         """Test that downloader module has expected functions."""
-        import tddata
+        import tesouro_direto_fetcher
 
         # These functions should be available without extras
-        self.assertTrue(hasattr(tddata.downloader, "download"))
-        self.assertTrue(hasattr(tddata.downloader, "download_resource"))
-        self.assertTrue(hasattr(tddata.downloader, "get_dataset_resources"))
+        self.assertTrue(hasattr(tesouro_direto_fetcher.downloader, "download"))
+        self.assertTrue(hasattr(tesouro_direto_fetcher.downloader, "download_resource"))
+        self.assertTrue(hasattr(tesouro_direto_fetcher.downloader, "get_dataset_resources"))
 
     @unittest.skipUnless(
         _has_polars(),
@@ -68,10 +68,10 @@ class TestOptionalDependencies(unittest.TestCase):
     )
     def test_reader_functions_with_extras(self):
         """Test that reader module works when extras are installed."""
-        import tddata
+        import tesouro_direto_fetcher
 
-        self.assertTrue(tddata._HAS_ANALYSIS)
-        self.assertIsNotNone(tddata.reader)
+        self.assertTrue(tesouro_direto_fetcher._HAS_ANALYSIS)
+        self.assertIsNotNone(tesouro_direto_fetcher.reader)
 
         # Check that all read functions are available
         expected_readers = [
@@ -86,7 +86,7 @@ class TestOptionalDependencies(unittest.TestCase):
         ]
         for reader_func in expected_readers:
             self.assertTrue(
-                hasattr(tddata.reader, reader_func),
+                hasattr(tesouro_direto_fetcher.reader, reader_func),
                 f"{reader_func} should be available",
             )
 
@@ -96,10 +96,10 @@ class TestOptionalDependencies(unittest.TestCase):
     )
     def test_plot_functions_with_extras(self):
         """Test that plot module works when extras are installed."""
-        import tddata
+        import tesouro_direto_fetcher
 
-        self.assertTrue(tddata._HAS_ANALYSIS)
-        self.assertIsNotNone(tddata.plot)
+        self.assertTrue(tesouro_direto_fetcher._HAS_ANALYSIS)
+        self.assertIsNotNone(tesouro_direto_fetcher.plot)
 
         # Check that plot functions are available
         expected_plotters = [
@@ -111,7 +111,7 @@ class TestOptionalDependencies(unittest.TestCase):
             "plot_buybacks",
         ]
         for plot_func in expected_plotters:
-            self.assertTrue(hasattr(tddata.plot, plot_func), f"{plot_func} should be available")
+            self.assertTrue(hasattr(tesouro_direto_fetcher.plot, plot_func), f"{plot_func} should be available")
 
 
 if __name__ == "__main__":

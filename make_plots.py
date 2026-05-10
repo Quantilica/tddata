@@ -3,8 +3,8 @@ from pathlib import Path
 
 import polars as pl
 
-from tddata import plot, reader, storage
-from tddata.constants import Column as C
+from tesouro_direto_fetcher import plot, reader, storage
+from tesouro_direto_fetcher.constants import Column as C
 
 PLOTS_DIR = Path("plots")
 PLOTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -225,8 +225,8 @@ def main():
     parser.add_argument(
         "--data-dir",
         type=str,
-        default="~/data/tddata",
-        help="Directory containing the data files (default: ~/data/tddata)",
+        default="~/data/tesouro-direto-fetcher",
+        help="Directory containing the data files (default: ~/data/tesouro-direto-fetcher)",
     )
     args = parser.parse_args()
 

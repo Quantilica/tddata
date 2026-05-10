@@ -1,5 +1,5 @@
 [project]
-name = "tddata"
+name = "tesouro-direto-fetcher"
 version = "2.1.1"
 description = "Easly download & read brazilian Tesouro Direto's data"
 readme = "README.md"
@@ -25,12 +25,12 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Quantilica/tddata"
-Repository = "https://github.com/Quantilica/tddata"
-Issues = "https://github.com/Quantilica/tddata/issues"
+Homepage = "https://github.com/Quantilica/tesouro-direto-fetcher"
+Repository = "https://github.com/Quantilica/tesouro-direto-fetcher"
+Issues = "https://github.com/Quantilica/tesouro-direto-fetcher/issues"
 
 [project.scripts]
-tddata = "tddata.cli:main"
+tesouro-direto-fetcher = "tesouro_direto_fetcher.cli:main"
 
 [project.optional-dependencies]
 analysis = [

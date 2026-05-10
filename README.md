@@ -1,9 +1,9 @@
-# tddata - Download, Analyze & Plot Brazilian Tesouro Direto's Data (CKAN API)
+# tesouro-direto-fetcher - Download, Analyze & Plot Brazilian Tesouro Direto's Data (CKAN API)
 
-![GitHub](https://img.shields.io/github/license/Quantilica/tddata?style=flat-square)
-[![Tests](https://github.com/Quantilica/tddata/actions/workflows/run-tests.yml/badge.svg)](https://github.com/Quantilica/tddata/actions/workflows/run-tests.yml)
+![GitHub](https://img.shields.io/github/license/Quantilica/tesouro-direto-fetcher?style=flat-square)
+[![Tests](https://github.com/Quantilica/tesouro-direto-fetcher/actions/workflows/run-tests.yml/badge.svg)](https://github.com/Quantilica/tesouro-direto-fetcher/actions/workflows/run-tests.yml)
 
-**tddata** is a powerful Python package designed to simplify the process of downloading, reading, and visualizing historical data from Brazil's Tesouro Direto program. It leverages the official CKAN API (Tesouro Transparente) to fetch the most up-to-date datasets.
+**tesouro-direto-fetcher** is a powerful Python package designed to simplify the process of downloading, reading, and visualizing historical data from Brazil's Tesouro Direto program. It leverages the official CKAN API (Tesouro Transparente) to fetch the most up-to-date datasets.
 
 ## Features
 
@@ -19,25 +19,25 @@ This package is available via GitHub. You can install it using `pip`:
 
 **Download only (minimal dependencies):**
 ```shell
-pip install "git+https://github.com/Quantilica/tddata#egg=tddata"
+pip install "git+https://github.com/Quantilica/tesouro-direto-fetcher#egg=tesouro-direto-fetcher"
 ```
 
 **Full installation with reading, analysis and plotting features:**
 ```shell
-pip install "git+https://github.com/Quantilica/tddata#egg=tddata[analysis]"
+pip install "git+https://github.com/Quantilica/tesouro-direto-fetcher#egg=tesouro-direto-fetcher[analysis]"
 ```
 
 The minimal installation includes only `httpx` and `tqdm` for downloading data. The `[analysis]` extras add `polars` (CSV parsing, analytics) and `altair[save]` (charts).
 
 ## 2. Usage
 
-### 2.1 The `tddata` CLI
+### 2.1 The `tesouro-direto-fetcher` CLI
 
 The package includes a comprehensive Command-Line Interface (CLI) for downloading, inspecting, and converting Tesouro Direto data. See [CLI.md](docs/CLI.md) for complete documentation including all commands, options, and examples.
 
-### 2.2 The `tddata` Python Package
+### 2.2 The `tesouro-direto-fetcher` Python Package
 
-You can use `tddata` as a library in your Python scripts or Jupyter Notebooks.
+You can use `tesouro-direto-fetcher` as a library in your Python scripts or Jupyter Notebooks.
 
 #### Downloading Data
 
@@ -46,7 +46,7 @@ You can use `tddata` as a library in your Python scripts or Jupyter Notebooks.
 ```python
 import asyncio
 from pathlib import Path
-from tddata import downloader
+from tesouro_direto_fetcher import downloader
 
 # Download 'prices' dataset to ./data folder, max 3 concurrent connections
 asyncio.run(
@@ -68,11 +68,11 @@ infos = asyncio.run(
 
 #### Reading Data
 
-The `tddata.reader` module provides specialized functions for each dataset type.
+The `tesouro_direto_fetcher.reader` module provides specialized functions for each dataset type.
 
 ```python
 from pathlib import Path
-from tddata import reader
+from tesouro_direto_fetcher import reader
 
 # Read Prices/Rates
 df_prices = reader.read_prices(
@@ -101,11 +101,11 @@ df_investors = reader.read_investors(
 
 #### Plotting Data
 
-The `tddata.plot` module returns Altair charts (`alt.Chart`). Display them in a notebook with `chart.display()` or save to disk with `chart.save("name.png")` / `.html` / `.svg`.
+The `tesouro_direto_fetcher.plot` module returns Altair charts (`alt.Chart`). Display them in a notebook with `chart.display()` or save to disk with `chart.save("name.png")` / `.html` / `.svg`.
 
 ```python
-from tddata import plot
-from tddata.constants import Column
+from tesouro_direto_fetcher import plot
+from tesouro_direto_fetcher.constants import Column
 
 # 1. Plot Price History
 chart_prices = plot.plot_prices(
@@ -128,7 +128,7 @@ plot.plot_investors_demographics(
 ).save("investors_profession.html")
 ```
 
-Other plotting helpers exposed by `tddata.plot`: `plot_investors_evolution`, `plot_operations`, `plot_sales`, `plot_buybacks`, `plot_maturities`, `plot_interest_coupons`.
+Other plotting helpers exposed by `tesouro_direto_fetcher.plot`: `plot_investors_evolution`, `plot_operations`, `plot_sales`, `plot_buybacks`, `plot_maturities`, `plot_interest_coupons`.
 
 ![Price History](./plots/prices_tesouro-selic_base_price.png)
 

@@ -4,8 +4,8 @@ from datetime import datetime
 import altair as alt
 import polars as pl
 
-from tddata import analytics, plot
-from tddata.constants import Column
+from tesouro_direto_fetcher import analytics, plot
+from tesouro_direto_fetcher.constants import Column
 
 
 class TestPlot(unittest.TestCase):

@@ -178,7 +178,7 @@ def run_convert(args) -> int:
         from . import converter
     except ImportError:
         logger.error("Convert feature requires analysis extras.")
-        logger.error("Install with: pip install tddata[analysis]")
+        logger.error("Install with: pip install tesouro-direto-fetcher[analysis]")
         return 1
 
     data_dir: Path = args.data_dir

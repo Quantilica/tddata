@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tddata import storage
+from tesouro_direto_fetcher import storage
 
 
 class TestStorage(unittest.TestCase):

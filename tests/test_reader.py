@@ -5,8 +5,8 @@ from pathlib import Path
 
 import polars as pl
 
-from tddata import reader
-from tddata.constants import Column
+from tesouro_direto_fetcher import reader
+from tesouro_direto_fetcher.constants import Column
 
 
 class TestReader(unittest.TestCase):

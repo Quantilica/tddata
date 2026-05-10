@@ -1,10 +1,10 @@
-# Return Calculations in tddata
+# Return Calculations in tesouro-direto-fetcher
 
-This document describes the return calculation functions added to the tddata package, inspired by the tddata-db returns module.
+This document describes the return calculation functions added to the tesouro-direto-fetcher package, inspired by the tesouro-direto-fetcher-db returns module.
 
 ## Overview
 
-The return calculation functions in `tddata.analytics` provide Polars-friendly implementations of:
+The return calculation functions in `tesouro_direto_fetcher.analytics` provide Polars-friendly implementations of:
 
 1. **Simple Returns** - Basic percentage return calculations
 2. **Annualized Returns** - Compound Annual Growth Rate (CAGR)
@@ -33,7 +33,7 @@ Calculates simple percentage returns for Polars Series.
 **Example:**
 ```python
 import polars as pl
-from tddata.analytics import calculate_simple_return
+from tesouro_direto_fetcher.analytics import calculate_simple_return
 
 prices = pl.DataFrame({
     'buy_price': [10000, 20000, 5000],
@@ -139,8 +139,8 @@ Supports semiannual coupon payments for bonds with "Juros Semestrais".
 
 **Example:**
 ```python
-from tddata import reader, analytics
-from tddata.constants import Column as C
+from tesouro_direto_fetcher import reader, analytics
+from tesouro_direto_fetcher.constants import Column as C
 
 # Read operations, prices, and coupons
 operations = reader.read_operations('operations.csv')
@@ -226,7 +226,7 @@ A deposit early in the month has a weight close to 1.0, while a deposit at the e
 # Calculate monthly returns for entire portfolio with coupon support
 import altair as alt
 from datetime import date
-from tddata.analytics import calculate_portfolio_monthly_returns
+from tesouro_direto_fetcher.analytics import calculate_portfolio_monthly_returns
 
 monthly = calculate_portfolio_monthly_returns(
     operations,
@@ -259,11 +259,11 @@ total_coupons = monthly.filter(monthly['net_cash_flow'] < 0)['net_cash_flow'].su
 print(f"Total coupon distributions: {abs(total_coupons):.2f}")
 ```
 
-## Comparison with tddata-db Returns Module
+## Comparison with tesouro-direto-fetcher-db Returns Module
 
-The tddata implementation differs from tddata-db in the following ways:
+The tesouro-direto-fetcher implementation differs from tesouro_direto_fetcher-db in the following ways:
 
-| Feature | tddata-db | tddata |
+| Feature | tesouro-direto-fetcher-db | tesouro-direto-fetcher |
 |---------|-----------|--------|
 | **Paradigm** | Object-oriented (classes) | Functional (Polars expressions) |
 | **FIFO Tracking** | `LotTracker` class with state | Function-based matching in operations DataFrame |
@@ -274,7 +274,7 @@ The tddata implementation differs from tddata-db in the following ways:
 
 ### Key Design Differences
 
-**tddata-db approach:**
+**tesouro-direto-fetcher-db approach:**
 ```python
 # Stateful, object-oriented
 tracker = LotTracker()
@@ -283,7 +283,7 @@ for operation in operations:
 summary = tracker.calculate_summary(price_provider)
 ```
 
-**tddata approach:**
+**tesouro-direto-fetcher approach:**
 ```python
 # Stateless, functional
 returns = calculate_operations_returns(operations_df, prices_df)
@@ -296,10 +296,10 @@ summary = returns.groupby('status').agg({'simple_return': 'mean', ...})
 
 ```python
 from pathlib import Path
-from tddata import reader, analytics
+from tesouro_direto_fetcher import reader, analytics
 
 # Load data
-data_dir = Path("~/data/tddata")
+data_dir = Path("~/data/tesouro-direto-fetcher")
 operations = reader.read_operations(data_dir / "operations.csv")
 prices = reader.read_prices(data_dir / "prices.csv")
 coupons = reader.read_interest_coupons(data_dir / "interest_coupons.csv")  # Optional
@@ -449,4 +449,4 @@ Possible additions:
 
 - Modified Dietz Method: [CFA Institute](https://www.cfainstitute.org/)
 - FIFO Accounting: [IRS Publication 550](https://www.irs.gov/publications/p550)
-- tddata-db returns module: `src/tddata_db/returns/`
+- tesouro-direto-fetcher-db returns module: `src/tesouro-direto-fetcher_db/returns/`

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from tddata import downloader
+from tesouro_direto_fetcher import downloader
 
 
 class TestDownloader(unittest.IsolatedAsyncioTestCase):
@@ -15,7 +15,7 @@ class TestDownloader(unittest.IsolatedAsyncioTestCase):
     def tearDown(self):
         shutil.rmtree(self.test_dir)
 
-    @patch("tddata.downloader.httpx.AsyncClient")
+    @patch("tesouro_direto_fetcher.downloader.httpx.AsyncClient")
     async def test_get_dataset_resources(self, mock_client_cls):
         mock_client = MagicMock()
         mock_response = MagicMock()
@@ -47,7 +47,7 @@ class TestDownloader(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(resources), 2)
         self.assertEqual(resources[0]["name"], "Resource 1")
 
-    @patch("tddata.downloader.httpx.AsyncClient")
+    @patch("tesouro_direto_fetcher.downloader.httpx.AsyncClient")
     async def test_get_dataset_resources_failure(self, mock_client_cls):
         mock_client = MagicMock()
         mock_response = MagicMock()
@@ -64,8 +64,8 @@ class TestDownloader(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await downloader.get_dataset_resources(mock_client, "bad-id")
 
-    @patch("tddata.downloader.get_dataset_resources")
-    @patch("tddata.downloader.httpx.AsyncClient")
+    @patch("tesouro_direto_fetcher.downloader.get_dataset_resources")
+    @patch("tesouro_direto_fetcher.downloader.httpx.AsyncClient")
     async def test_download_success(self, mock_client_cls, mock_get_resources):
         # Mock resources
         mock_get_resources.return_value = [
@@ -128,8 +128,8 @@ class TestDownloader(unittest.IsolatedAsyncioTestCase):
             content = f.read()
         self.assertEqual(content, b"chunk1chunk2")
 
-    @patch("tddata.downloader.get_dataset_resources")
-    @patch("tddata.downloader.httpx.AsyncClient")
+    @patch("tesouro_direto_fetcher.downloader.get_dataset_resources")
+    @patch("tesouro_direto_fetcher.downloader.httpx.AsyncClient")
     async def test_download_skip_existing(self, mock_client_cls, mock_get_resources):
         # Set up an existing file
         filename = "resource-1@20240101T120000.csv"
