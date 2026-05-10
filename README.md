@@ -1,156 +1,111 @@
-# tesouro-direto-fetcher - Download, Analyze & Plot Brazilian Tesouro Direto's Data (CKAN API)
+# tesouro-direto-fetcher: Download, análise e visualização do Tesouro Direto
 
-![GitHub](https://img.shields.io/github/license/Quantilica/tesouro-direto-fetcher?style=flat-square)
-[![Tests](https://github.com/Quantilica/tesouro-direto-fetcher/actions/workflows/run-tests.yml/badge.svg)](https://github.com/Quantilica/tesouro-direto-fetcher/actions/workflows/run-tests.yml)
+![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg?style=flat-square) ![Python](https://img.shields.io/badge/python-3.12+-blue.svg?style=flat-square) [![Tests](https://github.com/Quantilica/tesouro-direto-fetcher/actions/workflows/run-tests.yml/badge.svg)](https://github.com/Quantilica/tesouro-direto-fetcher/actions/workflows/run-tests.yml)
 
-**tesouro-direto-fetcher** is a powerful Python package designed to simplify the process of downloading, reading, and visualizing historical data from Brazil's Tesouro Direto program. It leverages the official CKAN API (Tesouro Transparente) to fetch the most up-to-date datasets.
+Biblioteca Python para download, leitura e visualização de dados históricos do Tesouro Direto via API CKAN (Tesouro Transparente). Fornece leitores especializados por tipo de dataset e gráficos prontos com Altair.
 
-## Features
+## Instalação
 
-*   **Automated Downloads**: Easily fetch datasets directly from the Government's CKAN API.
-*   **Specialized Readers**: Dedicated functions to read and parse CSVs for Prices, Stock, Investors, Operations, Sales, Buybacks/Redemptions, and more.
-*   **Standardized Data**: All DataFrames come with consistent, analyst-friendly column names defined in a robust schema.
-*   **Visualization**: Built-in plotting module that returns **Altair** charts for time-series, distribution, and demographic analysis (no Matplotlib/Seaborn needed).
-*   **CLI**: A convenient command-line interface for quick data fetching.
+Instalação mínima (apenas download):
 
-## 1. Installation
-
-This package is available via GitHub. You can install it using `pip`:
-
-**Download only (minimal dependencies):**
-```shell
+```bash
 pip install "git+https://github.com/Quantilica/tesouro-direto-fetcher#egg=tesouro-direto-fetcher"
 ```
 
-**Full installation with reading, analysis and plotting features:**
-```shell
+Com análise e visualização (adiciona Polars e Altair):
+
+```bash
 pip install "git+https://github.com/Quantilica/tesouro-direto-fetcher#egg=tesouro-direto-fetcher[analysis]"
 ```
 
-The minimal installation includes only `httpx` and `tqdm` for downloading data. The `[analysis]` extras add `polars` (CSV parsing, analytics) and `altair[save]` (charts).
+## Uso Rápido
 
-## 2. Usage
+```python
+import asyncio
+from pathlib import Path
+from tesouro_direto_fetcher import downloader, reader
 
-### 2.1 The `tesouro-direto-fetcher` CLI
+# Download dos dados de preços/taxas
+asyncio.run(
+    downloader.download(
+        dest_dir=Path("./dados"),
+        dataset_id="taxas-dos-titulos-ofertados-pelo-tesouro-direto",
+    )
+)
 
-The package includes a comprehensive Command-Line Interface (CLI) for downloading, inspecting, and converting Tesouro Direto data. See [CLI.md](docs/CLI.md) for complete documentation including all commands, options, and examples.
+# Leitura
+df_precos = reader.read_prices(
+    Path("./dados/taxas-dos-titulos-ofertados-pelo-tesouro-direto@20251230T102010.csv")
+)
+```
 
-### 2.2 The `tesouro-direto-fetcher` Python Package
+## CLI
 
-You can use `tesouro-direto-fetcher` as a library in your Python scripts or Jupyter Notebooks.
+Consulte [docs/CLI.md](docs/CLI.md) para a referência completa de comandos, opções e exemplos.
 
-#### Downloading Data
+## API Python
 
-`downloader.download` is asynchronous; wrap it with `asyncio.run` (or `await` it inside another coroutine).
+### Download assíncrono
 
 ```python
 import asyncio
 from pathlib import Path
 from tesouro_direto_fetcher import downloader
 
-# Download 'prices' dataset to ./data folder, max 3 concurrent connections
 asyncio.run(
     downloader.download(
-        dest_dir=Path("./data"),
+        dest_dir=Path("./dados"),
         dataset_id="taxas-dos-titulos-ofertados-pelo-tesouro-direto",
         max_concurrency=3,
     )
 )
-
-# Inspect what would be downloaded without writing anything
-infos = asyncio.run(
-    downloader.get_download_info(
-        dest_dir=Path("./data"),
-        dataset_id="taxas-dos-titulos-ofertados-pelo-tesouro-direto",
-    )
-)
 ```
 
-#### Reading Data
-
-The `tesouro_direto_fetcher.reader` module provides specialized functions for each dataset type.
+### Leitura
 
 ```python
 from pathlib import Path
 from tesouro_direto_fetcher import reader
 
-# Read Prices/Rates
-df_prices = reader.read_prices(
-    Path(
-        ".", "data",
-        "taxas-dos-titulos-ofertados-pelo-tesouro-direto@20251230T102010.csv"
-    )
-)
-
-# Read Stock
-df_stock = reader.read_stock(
-    Path(
-        ".", "data",
-        "estoque-do-tesouro-direto@20251201T102018.csv"
-    )
-)
-
-# Read Investors
-df_investors = reader.read_investors(
-    Path(
-        ".", "data",
-        "investidores-do-tesouro-direto-de-2024@20251205T131939.csv"
-    )
-)
+df_precos      = reader.read_prices(Path("./dados/taxas-...@....csv"))
+df_estoque     = reader.read_stock(Path("./dados/estoque-...@....csv"))
+df_investidores = reader.read_investors(Path("./dados/investidores-...@....csv"))
 ```
 
-#### Plotting Data
-
-The `tesouro_direto_fetcher.plot` module returns Altair charts (`alt.Chart`). Display them in a notebook with `chart.display()` or save to disk with `chart.save("name.png")` / `.html` / `.svg`.
+### Visualização
 
 ```python
 from tesouro_direto_fetcher import plot
-from tesouro_direto_fetcher.constants import Column
 
-# 1. Plot Price History
-chart_prices = plot.plot_prices(
-    df_prices,
-    bond_type="Tesouro Selic",
-    variable=Column.BASE_PRICE.value,
-)
-chart_prices.save("prices_tesouro-selic.html")
-
-# 2. Plot Stock Evolution by Bond Type
-plot.plot_stock(df_stock, by_bond_type=True).save("stock_evolution_by_type.html")
-
-# 3. Plot Investor Demographics (Population Pyramid)
-plot.plot_investors_population_pyramid(df_investors).save("investors_pyramid.html")
-
-# 4. Plot Investor Demographics (e.g., Profession bar chart)
-plot.plot_investors_demographics(
-    df_investors,
-    column=Column.PROFESSION.value,
-).save("investors_profession.html")
+plot.plot_prices(df_precos, bond_type="Tesouro Selic").save("precos.html")
+plot.plot_stock(df_estoque, by_bond_type=True).save("estoque.html")
+plot.plot_investors_population_pyramid(df_investidores).save("piramide.html")
 ```
 
-Other plotting helpers exposed by `tesouro_direto_fetcher.plot`: `plot_investors_evolution`, `plot_operations`, `plot_sales`, `plot_buybacks`, `plot_maturities`, `plot_interest_coupons`.
+Helpers disponíveis: `plot_investors_evolution`, `plot_operations`, `plot_sales`, `plot_buybacks`, `plot_maturities`, `plot_interest_coupons`. Veja [docs/PLOTS.md](docs/PLOTS.md).
 
-![Price History](./plots/prices_tesouro-selic_base_price.png)
+## Fontes de Dados
 
-![Stock Evolution](./plots/stock_evolution_by_type.png)
+Todos os dados são obtidos via [API CKAN do Tesouro Transparente](https://www.tesourotransparente.gov.br/ckan/):
 
-![Investor Demographics by Age & Gender](./plots/investors_population_pyramid.png)
+| Dataset | ID CKAN |
+| :--- | :--- |
+| Preços / Taxas | `taxas-dos-titulos-ofertados-pelo-tesouro-direto` |
+| Estoque | `estoque-do-tesouro-direto` |
+| Investidores | `investidores-do-tesouro-direto` |
+| Operações | `operacoes-do-tesouro-direto` |
+| Vendas | `vendas-do-tesouro-direto` |
+| Recompras | `recompras-do-tesouro-direto` |
 
-![Investor Demographics by Profession](./plots/investors_demographics_profession.png)
+## Desenvolvimento
 
-See more visualizations in the [PLOTS.md](docs/PLOTS.md) file.
+```bash
+git clone https://github.com/Quantilica/tesouro-direto-fetcher.git
+cd tesouro-direto-fetcher
+uv sync --dev
+uv run pytest
+```
 
-## 3. Data Source
+## Licença
 
-All data is fetched from the official **Tesouro Transparente** via their [CKAN API](https://www.tesourotransparente.gov.br/ckan/).
-
-*   **Prices**: `taxas-dos-titulos-ofertados-pelo-tesouro-direto`
-*   **Stock**: `estoque-do-tesouro-direto`
-*   **Investors**: `investidores-do-tesouro-direto`
-*   **Operations**: `operacoes-do-tesouro-direto`
-*   **Sales**: `vendas-do-tesouro-direto`
-*   **Buybacks**: `recompras-do-tesouro-direto`
-
-## 4. License
-
-This project is licensed under the GNU General Public License v3.0 (GPL-3.0).
+GPL-3.0 — veja [LICENSE](LICENSE).
