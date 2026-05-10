@@ -1,5 +1,10 @@
-from . import downloader
-from .constants import (
+from quantilica_core.logging import get_logger
+
+__version__ = "2.1.1"
+logger = get_logger(__name__)
+
+from . import downloader  # noqa: E402  (must follow `logger` definition)
+from .constants import (  # noqa: E402
     AccountStatus,
     BondType,
     Channel,
@@ -12,7 +17,7 @@ from .constants import (
 
 # Optional imports - only available if analysis extras are installed
 try:
-    from . import plot, reader
+    from . import plot, reader  # noqa: E402
 
     _HAS_ANALYSIS = True
 except ImportError:
@@ -34,5 +39,3 @@ __all__ = [
 
 if _HAS_ANALYSIS:
     __all__.extend(["plot", "reader"])
-
-__version__ = "2.1.1"

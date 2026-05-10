@@ -2,7 +2,9 @@ import argparse
 import asyncio
 from pathlib import Path
 
-from . import downloader
+from quantilica_core.logging import configure_cli_logging
+
+from . import downloader, logger
 from .constants import (
     DATASET_BUYBACKS,
     DATASET_INVESTORS,
@@ -11,14 +13,34 @@ from .constants import (
     DATASET_PRICES_RATES,
     DATASET_SALES,
 )
+from .storage import DataRepository
+
+DATASET_MAP = {
+    "prices": DATASET_PRICES_RATES,
+    "operations": DATASET_OPERATIONS,
+    "investors": DATASET_INVESTORS,
+    "stock": DATASET_MINT_STOCK,
+    "buybacks": DATASET_BUYBACKS,
+    "sales": DATASET_SALES,
+}
+DATASET_CHOICES = [*DATASET_MAP, "all"]
 
 
 def set_parser():
-    parser = argparse.ArgumentParser(description="Tesouro Direto Data Downloader & Converter")
+    parser = argparse.ArgumentParser(
+        description="Tesouro Direto Data Downloader & Converter"
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable DEBUG-level logging",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # Download command
-    download_parser = subparsers.add_parser("download", help="Download datasets")
+    download_parser = subparsers.add_parser(
+        "download", help="Download datasets"
+    )
     download_parser.add_argument(
         "-o",
         "--output",
@@ -29,21 +51,14 @@ def set_parser():
     )
     download_parser.add_argument(
         "--dataset",
-        choices=[
-            "prices",
-            "operations",
-            "investors",
-            "stock",
-            "buybacks",
-            "sales",
-            "all",
-        ],
+        choices=DATASET_CHOICES,
         default="prices",
         help="Dataset to download",
     )
 
-    # Info command
-    info_parser = subparsers.add_parser("info", help="Show download info without downloading")
+    info_parser = subparsers.add_parser(
+        "info", help="Show download info without downloading"
+    )
     info_parser.add_argument(
         "-o",
         "--output",
@@ -54,15 +69,7 @@ def set_parser():
     )
     info_parser.add_argument(
         "--dataset",
-        choices=[
-            "prices",
-            "operations",
-            "investors",
-            "stock",
-            "buybacks",
-            "sales",
-            "all",
-        ],
+        choices=DATASET_CHOICES,
         default="prices",
         help="Dataset to get info about",
     )
@@ -71,175 +78,160 @@ def set_parser():
     try:
         from . import converter  # noqa: F401
 
-        convert_parser = subparsers.add_parser("convert", help="Convert all latest CSVs to Parquet")
+        convert_parser = subparsers.add_parser(
+            "convert", help="Convert all latest CSVs to Parquet"
+        )
         convert_parser.add_argument(
             "data_dir",
             type=Path,
-            help="Data directory containing CSV files",
+            help="Data directory (root of raw/<dataset_id>/ tree)",
         )
     except ImportError:
-        pass  # Convert command not available without analysis extras
+        pass
 
     return parser
 
 
-async def run_download(args):
-    dataset_map = {
-        "prices": DATASET_PRICES_RATES,
-        "operations": DATASET_OPERATIONS,
-        "investors": DATASET_INVESTORS,
-        "stock": DATASET_MINT_STOCK,
-        "buybacks": DATASET_BUYBACKS,
-        "sales": DATASET_SALES,
-    }
+def _resolve_dataset_ids(name: str) -> list[str]:
+    if name == "all":
+        return list(DATASET_MAP.values())
+    return [DATASET_MAP[name]]
 
-    if args.dataset == "all":
-        for dataset_id in dataset_map.values():
-            # We run sequential dataset downloads to avoid overwhelming,
-            # but files within dataset are concurrent.
-            # Alternatively, we could gather all, but that's thousands of files.
-            # Let's keep dataset level sequential.
-            await downloader.download(args.output, dataset_id=dataset_id)
-    else:
-        await downloader.download(args.output, dataset_id=dataset_map[args.dataset])
+
+async def run_download(args):
+    for dataset_id in _resolve_dataset_ids(args.dataset):
+        await downloader.download(args.output, dataset_id=dataset_id)
+
+
+def _print_info_list(info_list: list[dict]) -> tuple[int, int]:
+    """Print one info report; return (total_size, would_download_count)."""
+    print(f"\nFound {len(info_list)} CSV resources:")
+    print("=" * 80)
+
+    total_size = 0
+    would_download_count = 0
+
+    for info in info_list:
+        print(f"\nResource: {info['resource_name']}")
+        print(f"  Filename: {info['filename']}")
+        print(f"  Destination: {info['destination']}")
+        if info["size"]:
+            print(f"  Size: {info['size']:,} bytes")
+        else:
+            print("  Size: Unknown")
+        print(f"  Last Modified: {info['last_modified']}")
+        flag = "Yes" if info["would_download"] else "No (already up-to-date)"
+        print(f"  Would Download: {flag}")
+        if info["latest_local"]:
+            print(f"  Latest Local: {info['latest_local']}")
+
+        if info["size"]:
+            total_size += info["size"]
+        if info["would_download"]:
+            would_download_count += 1
+
+    print("\n" + "=" * 80)
+    print(f"Total resources: {len(info_list)}")
+    print(f"Would download: {would_download_count}")
+    mb = total_size / (1024 * 1024)
+    print(f"Total size: {total_size:,} bytes ({mb:.2f} MB)")
+    return total_size, would_download_count
 
 
 async def run_info(args):
-    dataset_map = {
-        "prices": DATASET_PRICES_RATES,
-        "operations": DATASET_OPERATIONS,
-        "investors": DATASET_INVESTORS,
-        "stock": DATASET_MINT_STOCK,
-        "buybacks": DATASET_BUYBACKS,
-        "sales": DATASET_SALES,
-    }
+    logger.info(f"Fetching download info for {args.dataset}...")
 
-    print(f"Fetching download info for {args.dataset}...")
+    if args.dataset == "all":
+        grand_total_size = 0
+        grand_would_download = 0
+        grand_count = 0
 
+        for ds_name in DATASET_MAP:
+            ds_id = DATASET_MAP[ds_name]
+            print(f"\nDataset: {ds_name}")
+            info_list = await downloader.get_download_info(
+                args.output, dataset_id=ds_id
+            )
+            total_size, would_download = _print_info_list(info_list)
+            grand_total_size += total_size
+            grand_would_download += would_download
+            grand_count += len(info_list)
+
+        print("\n" + "#" * 80)
+        print(f"Grand total resources: {grand_count}")
+        print(f"Grand would download: {grand_would_download}")
+        mb = grand_total_size / (1024 * 1024)
+        print(
+            f"Grand total size: {grand_total_size:,} bytes ({mb:.2f} MB)"
+        )
+        return
+
+    dataset_id = DATASET_MAP[args.dataset]
+    info_list = await downloader.get_download_info(
+        args.output, dataset_id=dataset_id
+    )
+    _print_info_list(info_list)
+
+
+def run_convert(args) -> int:
     try:
-        # Handle 'all' specially by iterating datasets
-        if args.dataset == "all":
-            grand_total_size = 0
-            grand_would_download = 0
-            grand_count = 0
+        from . import converter
+    except ImportError:
+        logger.error("Convert feature requires analysis extras.")
+        logger.error("Install with: pip install tddata[analysis]")
+        return 1
 
-            for ds_name, ds_id in dataset_map.items():
-                print(f"\nDataset: {ds_name}")
-                info_list = await downloader.get_download_info(args.output, dataset_id=ds_id)
+    data_dir: Path = args.data_dir
+    if not data_dir.is_dir():
+        logger.error(f"Directory '{data_dir}' does not exist.")
+        return 1
 
-                print(f"\nFound {len(info_list)} CSV resources:")
-                print("=" * 80)
+    repo = DataRepository(data_dir)
+    datasets = repo.list_datasets()
+    if not datasets:
+        logger.warning(f"No raw datasets found under '{data_dir}/raw/'.")
+        return 0
 
-                total_size = 0
-                would_download_count = 0
+    converted = 0
+    failed = 0
+    for dataset_id in datasets:
+        latest_files = repo.get_all_latest_files(dataset_id)
+        if not latest_files:
+            continue
+        logger.info(
+            f"Converting {len(latest_files)} files from {dataset_id}..."
+        )
+        for fp in latest_files:
+            try:
+                output_path = converter.convert_to_parquet(fp)
+                logger.info(f"  {fp.name} -> {output_path.name}")
+                converted += 1
+            except Exception as exc:
+                logger.error(f"Error converting {fp.name}: {exc}")
+                failed += 1
 
-                for info in info_list:
-                    print(f"\nResource: {info['resource_name']}")
-                    print(f"  Filename: {info['filename']}")
-                    print(f"  Destination: {info['destination']}")
-                    if info["size"]:
-                        print(f"  Size: {info['size']:,} bytes")
-                    else:
-                        print("  Size: Unknown")
-                    print(f"  Last Modified: {info['last_modified']}")
-                    print(f"  Would Download: {'Yes' if info['would_download'] else 'No (already up-to-date)'}")
-                    if info["latest_local"]:
-                        print(f"  Latest Local: {info['latest_local']}")
-
-                    if info["size"]:
-                        total_size += info["size"]
-                    if info["would_download"]:
-                        would_download_count += 1
-
-                print("\n" + "=" * 80)
-                print(f"Total resources: {len(info_list)}")
-                print(f"Would download: {would_download_count}")
-                print(f"Total size: {total_size:,} bytes ({total_size / (1024 * 1024):.2f} MB)")
-
-                grand_total_size += total_size
-                grand_would_download += would_download_count
-                grand_count += len(info_list)
-
-            # Grand totals across datasets
-            print("\n" + "#" * 80)
-            print(f"Grand total resources: {grand_count}")
-            print(f"Grand would download: {grand_would_download}")
-            print(f"Grand total size: {grand_total_size:,} bytes ({grand_total_size / (1024 * 1024):.2f} MB)")
-
-        else:
-            dataset_id = dataset_map[args.dataset]
-            info_list = await downloader.get_download_info(args.output, dataset_id=dataset_id)
-
-            print(f"\nFound {len(info_list)} CSV resources:")
-            print("=" * 80)
-
-            total_size = 0
-            would_download_count = 0
-
-            for info in info_list:
-                print(f"\nResource: {info['resource_name']}")
-                print(f"  Filename: {info['filename']}")
-                print(f"  Destination: {info['destination']}")
-                if info["size"]:
-                    print(f"  Size: {info['size']:,} bytes")
-                else:
-                    print("  Size: Unknown")
-                print(f"  Last Modified: {info['last_modified']}")
-                print(f"  Would Download: {'Yes' if info['would_download'] else 'No (already up-to-date)'}")
-                if info["latest_local"]:
-                    print(f"  Latest Local: {info['latest_local']}")
-
-                if info["size"]:
-                    total_size += info["size"]
-                if info["would_download"]:
-                    would_download_count += 1
-
-            print("\n" + "=" * 80)
-            print(f"Total resources: {len(info_list)}")
-            print(f"Would download: {would_download_count}")
-            print(f"Total size: {total_size:,} bytes ({total_size / (1024 * 1024):.2f} MB)")
-
-    except Exception as e:
-        print(f"Error fetching download info: {e}")
+    logger.info(f"Converted {converted} files ({failed} failures).")
+    return 0 if failed == 0 else 1
 
 
 def main():
     parser = set_parser()
     args = parser.parse_args()
+    configure_cli_logging(verbose=args.verbose)
 
     if args.command == "download":
         try:
             asyncio.run(run_download(args))
         except KeyboardInterrupt:
-            print("\nDownload cancelled.")
+            logger.warning("Download cancelled.")
 
     elif args.command == "info":
         try:
             asyncio.run(run_info(args))
         except KeyboardInterrupt:
-            print("\nInfo cancelled.")
+            logger.warning("Info cancelled.")
+        except Exception as exc:
+            logger.error(f"Error fetching download info: {exc}")
 
     elif args.command == "convert":
-        try:
-            from . import converter, storage
-        except ImportError:
-            print("Error: Convert feature requires analysis extras.")
-            print("Install with: pip install tddata[analysis]")
-            return
-
-        if not args.data_dir.exists() or not args.data_dir.is_dir():
-            print(f"Error: Directory '{args.data_dir}' does not exist or is not a directory.")
-            return
-
-        latest_files = storage.get_latest_files(args.data_dir)
-        if not latest_files:
-            print(f"No CSV files found in '{args.data_dir}'.")
-            return
-
-        print(f"Found {len(latest_files)} latest files to convert...")
-        for file_path in latest_files:
-            try:
-                output_path = converter.convert_to_parquet(file_path)
-                print(f"Successfully converted {file_path.name} to {output_path.name}")
-            except Exception as e:
-                print(f"Error converting {file_path.name}: {e}")
+        return run_convert(args)

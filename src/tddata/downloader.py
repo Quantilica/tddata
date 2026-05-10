@@ -2,196 +2,231 @@
 
 import asyncio
 from pathlib import Path
-from typing import Dict, List, Optional
 
-import httpx
-from tqdm.asyncio import tqdm
+import quantilica_core.metadata as core_meta
+from quantilica_core.exceptions import FetchError
+from quantilica_core.http import BROWSER_HEADERS, AsyncHttpClient
+from quantilica_core.logging import log_step
+from tqdm import tqdm
 
-from .constants import CKAN_API_URL, HTTP_HEADERS
-from .storage import generate_filename, get_latest_file
+from . import logger
+from .constants import CKAN_API_URL
+from .storage import DataRepository
+
+SOURCE_ID = "tesouro-direto"
+CATALOG_DATASET_ID = "tesouro-direto-venda"
+
+client = AsyncHttpClient(timeout=60.0, headers=BROWSER_HEADERS)
 
 
-async def get_dataset_resources(
-    client: httpx.AsyncClient, dataset_id: str
-) -> List[Dict]:
+async def get_dataset_resources(dataset_id: str) -> list[dict]:
     """Fetch resources metadata from CKAN dataset asynchronously."""
     params = {"id": dataset_id}
-    response = await client.get(CKAN_API_URL, params=params, headers=HTTP_HEADERS)
-    response.raise_for_status()
-    data = response.json()
+    data = await client.get_json(CKAN_API_URL, params=params)
     if not data["success"]:
-        raise ValueError(f"CKAN API failed: {data.get('error')}")
+        raise FetchError(f"CKAN API failed: {data.get('error')}")
     return data["result"]["resources"]
 
 
-async def get_download_info(dest_dir: Path, dataset_id: str) -> List[Dict]:
-    """Get metadata about files that would be downloaded without downloading them.
+async def get_download_info(dest_dir: Path, dataset_id: str) -> list[dict]:
+    """Describe what ``download(dest_dir, dataset_id)`` would do (no IO)."""
+    repo = DataRepository(dest_dir)
 
-    Args:
-        dest_dir: The directory path where files would be saved
-        dataset_id: The CKAN dataset ID or name
+    try:
+        resources = await get_dataset_resources(dataset_id)
+    except Exception as e:
+        raise FetchError(
+            f"Error fetching resources for {dataset_id}: {e}"
+        ) from e
 
-    Returns:
-        List[Dict]: List of metadata dictionaries containing:
-            - resource_name: Name of the resource from CKAN
-            - url: Download URL
-            - filename: Generated filename with timestamp
-            - destination: Full path where file would be saved
-            - size: File size in bytes (if available)
-            - last_modified: Last modification date (if available)
-            - format: File format
-            - would_download: Whether file would be downloaded (based on size check)
-            - latest_local: Path to latest local version (if exists)
-    """
-    dest_dir.mkdir(parents=True, exist_ok=True)
+    info_list = []
+    for resource in resources:
+        if resource.get("format", "").upper() != "CSV":
+            continue
 
-    async with httpx.AsyncClient() as client:
+        url = resource["url"]
+        last_modified_str = (
+            resource.get("last_modified") or resource.get("created")
+        )
+        filename = repo.generate_filename(resource["name"], last_modified_str)
+        dest_filepath = repo.file_path(dataset_id, filename)
+
+        slug = filename.split("@")[0]
+        latest_file = repo.get_latest_file(dataset_id, f"{slug}*.csv")
+
         try:
-            resources = await get_dataset_resources(client, dataset_id)
-        except Exception as e:
-            raise ValueError(f"Error fetching resources for {dataset_id}: {e}")
+            file_size = int(resource.get("size") or 0)
+        except (ValueError, TypeError):
+            file_size = 0
 
-        info_list = []
-        for resource in resources:
-            if resource.get("format", "").upper() != "CSV":
-                continue
+        would_download = True
+        if (
+            latest_file
+            and file_size
+            and latest_file.stat().st_size == file_size
+        ):
+            would_download = False
 
-            url = resource["url"]
-            last_modified_str = resource.get("last_modified") or resource.get("created")
-            filename = generate_filename(resource["name"], last_modified_str)
-            dest_filepath = dest_dir / filename
+        info_list.append(
+            {
+                "resource_name": resource.get("name", ""),
+                "url": url,
+                "filename": filename,
+                "destination": str(dest_filepath),
+                "size": file_size,
+                "last_modified": last_modified_str,
+                "format": resource.get("format", ""),
+                "would_download": would_download,
+                "latest_local": str(latest_file) if latest_file else None,
+            }
+        )
 
-            # Check for existing latest file
-            slug = filename.split("@")[0]
-            latest_file = get_latest_file(dest_dir, f"{slug}*.csv")
+    return info_list
 
-            # Try to get file size and ensure it's an integer
-            file_size = resource.get("size", 0)
-            if file_size:
-                try:
-                    file_size = int(file_size)
-                except (ValueError, TypeError):
-                    file_size = 0
-            would_download = True
 
-            # Check if we would skip this download
-            if latest_file and file_size and latest_file.stat().st_size == file_size:
-                would_download = False
-
-            info_list.append(
-                {
-                    "resource_name": resource.get("name", ""),
-                    "url": url,
-                    "filename": filename,
-                    "destination": str(dest_filepath),
-                    "size": file_size,
-                    "last_modified": last_modified_str,
-                    "format": resource.get("format", ""),
-                    "would_download": would_download,
-                    "latest_local": str(latest_file) if latest_file else None,
-                }
-            )
-
-        return info_list
+def _expected_size(resource: dict) -> int:
+    """Best-effort integer size from CKAN resource metadata."""
+    try:
+        return int(resource.get("size") or 0)
+    except (ValueError, TypeError):
+        return 0
 
 
 async def download_resource(
-    client: httpx.AsyncClient,
-    resource: Dict,
-    dest_dir: Path,
+    repo: DataRepository,
+    dataset_id: str,
+    resource: dict,
     semaphore: asyncio.Semaphore,
-) -> Optional[Dict]:
-    """Download a single resource asynchronously with a semaphore."""
-    url = resource["url"]
-    last_modified_str = resource.get("last_modified") or resource.get("created")
-    filename = generate_filename(resource["name"], last_modified_str)
-    dest_filepath = dest_dir / filename
+) -> dict | None:
+    """Download a single resource asynchronously with a semaphore.
 
-    # Get expected size via HEAD request
-    total_size = 0
-    try:
-        async with semaphore:
-            head_response = await client.head(url, headers=HTTP_HEADERS, timeout=10.0)
-            head_response.raise_for_status()
-            total_size = int(head_response.headers.get("Content-Length", 0))
-            if total_size == 0 and resource.get("size"):
-                total_size = int(resource["size"])
-    except Exception as e:
-        print(f"Failed to get size for {url}: {e}")
-        # Proceed with download anyway
-
-    # Check if latest file for this resource has the same size
-    slug = filename.split("@")[0]
-    latest_file = get_latest_file(dest_dir, f"{slug}*.csv")
-    if latest_file and latest_file.stat().st_size == total_size and total_size > 0:
-        return None
-
-    try:
-        async with semaphore:
-            async with client.stream("GET", url, headers=HTTP_HEADERS, timeout=60.0) as response:
-                response.raise_for_status()
-                if total_size == 0:
-                    total_size = int(response.headers.get("Content-Length", 0))
-                    if total_size == 0 and resource.get("size"):
-                        total_size = int(resource["size"])
-
-                desc = f"Downloading {filename[:30]}..."
-                with open(dest_filepath, "wb") as f:
-                    with tqdm(total=total_size, unit="B", unit_scale=True, desc=desc, leave=False) as pbar:
-                        async for chunk in response.aiter_bytes(chunk_size=8192):
-                            f.write(chunk)
-                            pbar.update(len(chunk))
-
-        return {
-            "url": url,
-            "filename": filename,
-            "destination": dest_filepath,
-            "file_size": total_size,
-        }
-
-    except Exception as e:
-        print(f"Failed to download {url}: {e}")
-        if dest_filepath.exists():
-            dest_filepath.unlink()
-        return None
-
-
-async def download(dest_dir: Path, dataset_id: str, max_concurrency: int = 3) -> List[Dict]:
-    """Download data files concurrently.
-
-    Args:
-        dest_dir: The directory path to save the file
-        dataset_id: The CKAN dataset ID or name.
-        max_concurrency: Maximum number of concurrent downloads.
-
-    Returns:
-        List[Dict]: metadata for downloaded files
+    Skips download when an existing local file with the same slug has a
+    matching upstream size (CKAN sometimes republishes identical content
+    under a new ``last_modified`` timestamp).
     """
-    dest_dir.mkdir(parents=True, exist_ok=True)
+    url = resource["url"]
+    last_modified_str = (
+        resource.get("last_modified") or resource.get("created")
+    )
+    filename = repo.generate_filename(resource["name"], last_modified_str)
+    dest_filepath = repo.file_path(dataset_id, filename)
+
+    expected_size = _expected_size(resource)
+    if expected_size > 0:
+        slug = filename.split("@")[0]
+        latest_file = repo.get_latest_file(dataset_id, f"{slug}*.csv")
+        if latest_file and latest_file.stat().st_size == expected_size:
+            logger.debug(
+                f"Skipping {filename}: matching local copy {latest_file.name}"
+            )
+            return None
+
+    desc = f"Downloading {filename[:30]}..."
+    pbar = tqdm(
+        total=expected_size or None,
+        unit="B",
+        unit_scale=True,
+        desc=desc,
+        leave=False,
+    )
+    last_seen = 0
+
+    def _on_progress(downloaded: int, total: int) -> None:
+        nonlocal last_seen
+        if total and pbar.total != total:
+            pbar.total = total
+        pbar.update(downloaded - last_seen)
+        last_seen = downloaded
+
+    try:
+        async with semaphore:
+            await client.download_with_manifest(
+                url,
+                dest_filepath,
+                source_id=SOURCE_ID,
+                dataset_id=dataset_id,
+                producer="tddata",
+                params=None,
+                progress=_on_progress,
+            )
+    except Exception as exc:
+        logger.error(f"Failed to download {url}: {exc}")
+        if dest_filepath.exists():
+            try:
+                dest_filepath.unlink()
+            except OSError:
+                pass
+        return None
+    finally:
+        pbar.close()
+
+    return {
+        "url": url,
+        "filename": filename,
+        "destination": dest_filepath,
+        "file_size": dest_filepath.stat().st_size,
+    }
+
+
+async def download(
+    dest_dir: Path,
+    dataset_id: str,
+    max_concurrency: int = 3,
+) -> list[dict]:
+    """Download data files concurrently."""
+    repo = DataRepository(dest_dir)
     semaphore = asyncio.Semaphore(max_concurrency)
 
-    async with httpx.AsyncClient() as client:
-        print(f"Fetching metadata for {dataset_id}...")
+    with log_step(logger, "download-dataset", dataset_id=dataset_id):
+        logger.info(f"Fetching metadata for {dataset_id}...")
         try:
-            resources = await get_dataset_resources(client, dataset_id)
+            resources = await get_dataset_resources(dataset_id)
         except Exception as e:
-            print(f"Error fetching resources for {dataset_id}: {e}")
+            logger.error(f"Error fetching resources for {dataset_id}: {e}")
             return []
 
-        tasks = []
-        for resource in resources:
-            if resource.get("format", "").upper() != "CSV":
-                continue
-            tasks.append(download_resource(client, resource, dest_dir, semaphore))
+        tasks = [
+            download_resource(repo, dataset_id, resource, semaphore)
+            for resource in resources
+            if resource.get("format", "").upper() == "CSV"
+        ]
 
         if not tasks:
-            print("No CSV resources found.")
+            logger.info("No CSV resources found.")
             return []
 
-        print(f"Found {len(tasks)} files. Starting download...")
+        logger.info(f"Found {len(tasks)} files. Starting download...")
         results = await asyncio.gather(*tasks)
 
-    # Filter out None values (skipped or failed)
     downloaded = [r for r in results if r is not None]
-    print(f"Successfully downloaded {len(downloaded)} files.")
+    logger.info(f"Successfully downloaded {len(downloaded)} files.")
     return downloaded
+
+
+def generate_catalog(
+    downloaded_files: list[dict],
+) -> core_meta.MetadataCatalog:
+    """Build a validated MetadataCatalog from Tesouro Direto downloads."""
+    source = core_meta.Source(
+        id=SOURCE_ID,
+        name="Tesouro Direto",
+        homepage_url="https://www.tesourodireto.com.br",
+    )
+    dataset = core_meta.Dataset(
+        id=CATALOG_DATASET_ID,
+        source_id=SOURCE_ID,
+        name="Dados Históricos do Tesouro Direto",
+    )
+    resources = [
+        core_meta.Resource(
+            id=file["filename"].replace(".", "_").replace("@", "_"),
+            dataset_id=CATALOG_DATASET_ID,
+            name=file["filename"],
+            url=file["url"],
+            format="csv",
+            path=str(file["destination"].absolute()),
+            metadata={"size": file["file_size"]},
+        )
+        for file in downloaded_files
+    ]
+    return core_meta.build_simple_catalog(source, dataset, resources)
