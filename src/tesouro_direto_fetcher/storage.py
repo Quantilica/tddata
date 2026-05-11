@@ -12,7 +12,7 @@ import re
 import unicodedata
 from pathlib import Path
 
-from quantilica_core.storage import BaseDataRepository
+from quantilica_core.storage import BaseDataRepository, stamp_filename
 
 
 def slugify(value: str) -> str:
@@ -37,17 +37,19 @@ class DataRepository(BaseDataRepository):
     def generate_filename(
         name: str, last_modified: str | None = None
     ) -> str:
-        """Return ``<slug>@<YYYYMMDDTHHMMSS>.csv`` for a CKAN resource."""
+        """Return ``<slug>@<YYYYMMDDTHHMMSS>.csv`` for a CKAN resource.
+
+        Returns ``<slug>.csv`` (no stamp) when ``last_modified`` is absent or
+        unparseable, rather than inventing a timestamp.
+        """
         name_slug = slugify(name)
-        timestamp: dt.datetime
+        timestamp: dt.datetime | None = None
         if last_modified:
             try:
                 timestamp = dt.datetime.fromisoformat(last_modified)
             except ValueError:
-                timestamp = dt.datetime.now()
-        else:
-            timestamp = dt.datetime.now()
-        return f"{name_slug}@{timestamp:%Y%m%dT%H%M%S}.csv"
+                pass
+        return stamp_filename(name_slug, "csv", timestamp, precision="datetime")
 
     def get_latest_file(
         self, dataset_id: str, pattern: str

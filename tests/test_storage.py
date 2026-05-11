@@ -4,67 +4,74 @@ import unittest
 from pathlib import Path
 
 from tesouro_direto_fetcher import storage
+from tesouro_direto_fetcher.storage import DataRepository
 
 
-class TestStorage(unittest.TestCase):
-    def setUp(self):
-        self.test_dir = Path(tempfile.mkdtemp())
-
-    def tearDown(self):
-        shutil.rmtree(self.test_dir)
-
-    def test_slugify(self):
+class TestSlugify(unittest.TestCase):
+    def test_basic(self):
         self.assertEqual(storage.slugify("Tesouro Selic"), "tesouro-selic")
         self.assertEqual(storage.slugify("Ação & Reação"), "acao-reacao")
         self.assertEqual(storage.slugify("  Spaces  "), "spaces")
         self.assertEqual(storage.slugify("Mixed_CASE"), "mixed_case")
 
-    def test_generate_filename(self):
-        # Test with explicit timestamp
-        filename = storage.generate_filename(
+
+class TestGenerateFilename(unittest.TestCase):
+    def test_with_valid_timestamp(self):
+        filename = DataRepository.generate_filename(
             "Tesouro Selic", "2024-01-01T12:00:00.000000"
         )
         self.assertEqual(filename, "tesouro-selic@20240101T120000.csv")
 
-        # Test with invalid timestamp (fallback to current time)
-        # We can't easily check exact time, but we can check format
-        filename = storage.generate_filename("Tesouro Selic", "invalid-date")
-        self.assertTrue(filename.startswith("tesouro-selic@"))
-        self.assertTrue(filename.endswith(".csv"))
+    def test_with_invalid_timestamp(self):
+        filename = DataRepository.generate_filename("Tesouro Selic", "invalid-date")
+        self.assertEqual(filename, "tesouro-selic.csv")
 
-        # Test without timestamp
-        filename = storage.generate_filename("Tesouro Selic")
-        self.assertTrue(filename.startswith("tesouro-selic@"))
-        self.assertTrue(filename.endswith(".csv"))
+    def test_without_timestamp(self):
+        filename = DataRepository.generate_filename("Tesouro Selic")
+        self.assertEqual(filename, "tesouro-selic.csv")
 
-    def test_get_latest_files(self):
-        # Create dummy files
-        (self.test_dir / "file-a@20240101T100000.csv").touch()
-        (self.test_dir / "file-a@20240101T110000.csv").touch()  # Newer
-        (self.test_dir / "file-b@20240101T100000.csv").touch()
-        (self.test_dir / "other.txt").touch()  # Should be ignored
 
-        latest_files = storage.get_latest_files(self.test_dir)
+class TestDataRepository(unittest.TestCase):
+    DATASET_ID = "tesouro-direto"
 
-        self.assertEqual(len(latest_files), 2)
-        filenames = [f.name for f in latest_files]
-        self.assertIn("file-a@20240101T110000.csv", filenames)
-        self.assertIn("file-b@20240101T100000.csv", filenames)
-        self.assertNotIn("file-a@20240101T100000.csv", filenames)
+    def setUp(self):
+        self.test_dir = Path(tempfile.mkdtemp())
+        self.repo = DataRepository(self.test_dir)
+        self.dataset_dir = self.repo.raw_path(self.DATASET_ID)
+        self.dataset_dir.mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir)
+
+    def _touch(self, name: str) -> Path:
+        p = self.dataset_dir / name
+        p.touch()
+        return p
+
+    def test_get_all_latest_files(self):
+        self._touch("file-a@20240101T100000.csv")
+        self._touch("file-a@20240101T110000.csv")  # Newer
+        self._touch("file-b@20240101T100000.csv")
+        self._touch("other.txt")  # Should be ignored
+
+        latest = self.repo.get_all_latest_files(self.DATASET_ID)
+
+        self.assertEqual(len(latest), 2)
+        names = [f.name for f in latest]
+        self.assertIn("file-a@20240101T110000.csv", names)
+        self.assertIn("file-b@20240101T100000.csv", names)
+        self.assertNotIn("file-a@20240101T100000.csv", names)
 
     def test_get_latest_file(self):
-        # Create dummy files
-        (self.test_dir / "investors-2023@20240101T100000.csv").touch()
-        (self.test_dir / "investors-2024@20240101T100000.csv").touch()
-        (self.test_dir / "investors-2024@20240101T110000.csv").touch()  # Newer
+        self._touch("investors-2023@20240101T100000.csv")
+        self._touch("investors-2024@20240101T100000.csv")
+        self._touch("investors-2024@20240101T110000.csv")  # Newer
 
-        # Test finding latest file with pattern
-        latest = storage.get_latest_file(self.test_dir, "investors-2024*.csv")
+        latest = self.repo.get_latest_file(self.DATASET_ID, "investors-2024*.csv")
         self.assertIsNotNone(latest)
         self.assertEqual(latest.name, "investors-2024@20240101T110000.csv")
 
-        # Test pattern with no matches
-        latest = storage.get_latest_file(self.test_dir, "nonexistent*.csv")
+        latest = self.repo.get_latest_file(self.DATASET_ID, "nonexistent*.csv")
         self.assertIsNone(latest)
 
 
