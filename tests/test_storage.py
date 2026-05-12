@@ -37,7 +37,7 @@ class TestDataRepository(unittest.TestCase):
     def setUp(self):
         self.test_dir = Path(tempfile.mkdtemp())
         self.repo = DataRepository(self.test_dir)
-        self.dataset_dir = self.repo.raw_path(self.DATASET_ID)
+        self.dataset_dir = self.repo.dataset_path(self.DATASET_ID)
         self.dataset_dir.mkdir(parents=True, exist_ok=True)
 
     def tearDown(self):
@@ -48,13 +48,13 @@ class TestDataRepository(unittest.TestCase):
         p.touch()
         return p
 
-    def test_get_all_latest_stamped_files(self):
+    def test_get_all_latest_files(self):
         self._touch("file-a@20240101T100000.csv")
         self._touch("file-a@20240101T110000.csv")  # Newer
         self._touch("file-b@20240101T100000.csv")
         self._touch("other.txt")  # Should be ignored
 
-        latest = self.repo.get_all_latest_stamped_files(self.DATASET_ID)
+        latest = self.repo.get_all_latest_files(self.DATASET_ID)
 
         self.assertEqual(len(latest), 2)
         names = [f.name for f in latest]
@@ -74,8 +74,8 @@ class TestDataRepository(unittest.TestCase):
         latest = self.repo.get_latest_stamped_file(self.DATASET_ID, "nonexistent")
         self.assertIsNone(latest)
 
-    def test_list_dataset_ids(self):
-        self.assertEqual(self.repo.list_dataset_ids(), [self.DATASET_ID])
+    def test_list_datasets(self):
+        self.assertEqual(self.repo.list_datasets(), [self.DATASET_ID])
 
 
 if __name__ == "__main__":
