@@ -32,6 +32,9 @@ Issues = "https://github.com/Quantilica/tesouro-direto-fetcher/issues"
 [project.scripts]
 tesouro-direto-fetcher = "tesouro_direto_fetcher.cli:main"
 
+[project.entry-points."quantilica.fetchers"]
+td = "tesouro_direto_fetcher.plugin:app"
+
 [project.optional-dependencies]
 analysis = [
     "altair[save]>=6.0.0",
