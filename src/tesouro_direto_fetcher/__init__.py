@@ -1,6 +1,11 @@
+from importlib.metadata import PackageNotFoundError, version
+
 from quantilica_core.logging import get_logger
 
-__version__ = "2.1.1"
+try:
+    __version__ = version("tesouro-direto-fetcher")
+except PackageNotFoundError:
+    __version__ = "0.0.0"
 logger = get_logger(__name__)
 
 from . import downloader  # noqa: E402  (must follow `logger` definition)

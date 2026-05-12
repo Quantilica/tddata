@@ -4,7 +4,7 @@ from pathlib import Path
 
 from quantilica_core.logging import configure_cli_logging
 
-from . import downloader, logger
+from . import __version__, downloader, logger
 from .constants import (
     DATASET_BUYBACKS,
     DATASET_INVESTORS,
@@ -29,6 +29,11 @@ DATASET_CHOICES = [*DATASET_MAP, "all"]
 def set_parser():
     parser = argparse.ArgumentParser(
         description="Tesouro Direto Data Downloader & Converter"
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     parser.add_argument(
         "-v",
