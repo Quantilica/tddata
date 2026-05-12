@@ -35,6 +35,7 @@ tesouro-direto-fetcher <command> [options]
 ### Global Options
 
 - `-h, --help` - Show help message and exit
+- `--verbose` - Exibir logs detalhados em vez de barra de progresso
 
 ## Commands
 
@@ -44,7 +45,7 @@ Download one or more datasets to a local directory.
 
 **Syntax:**
 ```bash
-tesouro-direto-fetcher download [-o OUTPUT_DIR] [--dataset DATASET]
+tesouro-direto-fetcher download [-o OUTPUT_DIR] [--dataset DATASET] [--verbose]
 ```
 
 **Options:**
@@ -52,7 +53,7 @@ tesouro-direto-fetcher download [-o OUTPUT_DIR] [--dataset DATASET]
 - `-o OUTPUT_DIR, --output OUTPUT_DIR`
   - Output directory for downloaded files
   - Type: Path
-  - Default: `data`
+  - Default: `/data/tesouro-direto`
   - Example: `-o ./my_data`
 
 - `--dataset DATASET`
@@ -61,29 +62,45 @@ tesouro-direto-fetcher download [-o OUTPUT_DIR] [--dataset DATASET]
   - Default: `prices`
   - When `all` is specified, downloads all available datasets sequentially
 
+- `--verbose`
+  - Exibe logs detalhados em vez da barra de progresso
+  - Por padrão, o comando mostra uma barra de contagem de arquivos (`N/total arquivo`)
+
 **Examples:**
 
 ```bash
-# Download prices dataset to default data directory
+# Download prices dataset (barra de progresso por padrão)
 tesouro-direto-fetcher download
 
-# Download prices dataset to custom directory
+# Download para diretório customizado
 tesouro-direto-fetcher download -o ./tesouro_data
 
-# Download stock data
+# Download com logs detalhados em vez de barra
+tesouro-direto-fetcher download --verbose
+
+# Download de outro dataset
 tesouro-direto-fetcher download --dataset stock -o ./data
 
-# Download all datasets
+# Download de todos os datasets
 tesouro-direto-fetcher download --dataset all -o ./data
-
-# Download operations and investors data
-# Note: Use separate commands for multiple specific datasets
-tesouro-direto-fetcher download --dataset operations -o ./data
-tesouro-direto-fetcher download --dataset investors -o ./data
 ```
 
-**Output:**
-The command will display a progress bar for each file being downloaded. Files are saved with timestamps in their filenames (e.g., `taxas-dos-titulos-ofertados-pelo-tesouro-direto@20251230T102010.csv`).
+**Output (padrão):**
+Uma barra de contagem de arquivos por dataset:
+```
+prices | 1/1 arquivo [00:03, 0.3 arquivo/s]
+```
+
+**Output (--verbose):**
+Logs estruturados com timestamps, nível e etapas de download:
+```
+2025-01-10T14:22:01+0000 INFO tesouro_direto_fetcher.downloader download-dataset start dataset_id=tesouro-direto-venda
+2025-01-10T14:22:01+0000 INFO tesouro_direto_fetcher.downloader Fetching metadata for tesouro-direto-venda...
+2025-01-10T14:22:02+0000 INFO tesouro_direto_fetcher.downloader Found 1 files. Starting download...
+2025-01-10T14:22:05+0000 INFO tesouro_direto_fetcher.downloader download-dataset ok elapsed=4.1s
+```
+
+Files are saved with timestamps in their filenames (e.g., `taxas-dos-titulos-ofertados-pelo-tesouro-direto@20251230T102010.csv`).
 
 ### `info`
 
