@@ -1,13 +1,12 @@
 """Functions to download Tesouro Direto's historical data"""
 
-import asyncio
 from pathlib import Path
 
 import quantilica_core.metadata as core_meta
 from quantilica_core.exceptions import FetchError
+from quantilica_core.fetcher import RemoteResource, download_resources
 from quantilica_core.http import BROWSER_HEADERS, AsyncHttpClient
 from quantilica_core.logging import log_step
-from tqdm import tqdm
 
 from . import logger
 from .constants import CKAN_API_URL
@@ -51,8 +50,8 @@ async def get_download_info(dest_dir: Path, dataset_id: str) -> list[dict]:
         filename = repo.generate_filename(resource["name"], last_modified_str)
         dest_filepath = repo.file_path(dataset_id, filename)
 
-        slug = filename.split("@")[0]
-        latest_file = repo.get_latest_file(dataset_id, f"{slug}*.csv")
+        slug = filename.partition("@")[0]
+        latest_file = repo.get_latest_stamped_file(dataset_id, slug)
 
         try:
             file_size = int(resource.get("size") or 0)
@@ -84,88 +83,29 @@ async def get_download_info(dest_dir: Path, dataset_id: str) -> list[dict]:
     return info_list
 
 
-def _expected_size(resource: dict) -> int:
-    """Best-effort integer size from CKAN resource metadata."""
-    try:
-        return int(resource.get("size") or 0)
-    except (ValueError, TypeError):
-        return 0
-
-
-async def download_resource(
-    repo: DataRepository,
-    dataset_id: str,
-    resource: dict,
-    semaphore: asyncio.Semaphore,
-) -> dict | None:
-    """Download a single resource asynchronously with a semaphore.
-
-    Skips download when an existing local file with the same slug has a
-    matching upstream size (CKAN sometimes republishes identical content
-    under a new ``last_modified`` timestamp).
-    """
-    url = resource["url"]
-    last_modified_str = (
-        resource.get("last_modified") or resource.get("created")
-    )
-    filename = repo.generate_filename(resource["name"], last_modified_str)
-    dest_filepath = repo.file_path(dataset_id, filename)
-
-    expected_size = _expected_size(resource)
-    if expected_size > 0:
-        slug = filename.split("@")[0]
-        latest_file = repo.get_latest_file(dataset_id, f"{slug}*.csv")
-        if latest_file and latest_file.stat().st_size == expected_size:
-            logger.debug(
-                f"Skipping {filename}: matching local copy {latest_file.name}"
+def _to_remote_resources(
+    ckan_resources: list[dict], repo: DataRepository
+) -> list[RemoteResource]:
+    result = []
+    for r in ckan_resources:
+        if r.get("format", "").upper() != "CSV":
+            continue
+        last_modified = r.get("last_modified") or r.get("created")
+        filename = repo.generate_filename(r["name"], last_modified)
+        try:
+            size = int(r.get("size") or 0)
+        except (ValueError, TypeError):
+            size = 0
+        result.append(
+            RemoteResource(
+                name=r["name"],
+                url=r["url"],
+                filename=filename,
+                size=size,
+                format="CSV",
             )
-            return None
-
-    desc = f"Downloading {filename[:30]}..."
-    pbar = tqdm(
-        total=expected_size or None,
-        unit="B",
-        unit_scale=True,
-        desc=desc,
-        leave=False,
-    )
-    last_seen = 0
-
-    def _on_progress(downloaded: int, total: int) -> None:
-        nonlocal last_seen
-        if total and pbar.total != total:
-            pbar.total = total
-        pbar.update(downloaded - last_seen)
-        last_seen = downloaded
-
-    try:
-        async with semaphore:
-            await client.download_with_manifest(
-                url,
-                dest_filepath,
-                source_id=SOURCE_ID,
-                dataset_id=dataset_id,
-                producer="tesouro-direto-fetcher",
-                params=None,
-                progress=_on_progress,
-            )
-    except Exception as exc:
-        logger.error(f"Failed to download {url}: {exc}")
-        if dest_filepath.exists():
-            try:
-                dest_filepath.unlink()
-            except OSError:
-                pass
-        return None
-    finally:
-        pbar.close()
-
-    return {
-        "url": url,
-        "filename": filename,
-        "destination": dest_filepath,
-        "file_size": dest_filepath.stat().st_size,
-    }
+        )
+    return result
 
 
 async def download(
@@ -175,7 +115,6 @@ async def download(
 ) -> list[dict]:
     """Download data files concurrently."""
     repo = DataRepository(dest_dir)
-    semaphore = asyncio.Semaphore(max_concurrency)
 
     with log_step(logger, "download-dataset", dataset_id=dataset_id):
         logger.info(f"Fetching metadata for {dataset_id}...")
@@ -185,22 +124,22 @@ async def download(
             logger.error(f"Error fetching resources for {dataset_id}: {e}")
             return []
 
-        tasks = [
-            download_resource(repo, dataset_id, resource, semaphore)
-            for resource in resources
-            if resource.get("format", "").upper() == "CSV"
-        ]
-
-        if not tasks:
+        remote = _to_remote_resources(resources, repo)
+        if not remote:
             logger.info("No CSV resources found.")
             return []
 
-        logger.info(f"Found {len(tasks)} files. Starting download...")
-        results = await asyncio.gather(*tasks)
-
-    downloaded = [r for r in results if r is not None]
-    logger.info(f"Successfully downloaded {len(downloaded)} files.")
-    return downloaded
+        logger.info(f"Found {len(remote)} files. Starting download...")
+        return await download_resources(
+            remote,
+            repo,
+            dataset_id,
+            client,
+            source_id=SOURCE_ID,
+            producer="tesouro-direto-fetcher",
+            max_concurrency=max_concurrency,
+            logger=logger,
+        )
 
 
 def generate_catalog(

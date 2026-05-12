@@ -5,23 +5,19 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from quantilica_core.exceptions import FetchError
+
 from tesouro_direto_fetcher.downloader import get_download_info
 
 
 class TestGetDownloadInfo(unittest.TestCase):
-    """Test get_download_info function."""
-
     def setUp(self):
-        """Set up test fixtures."""
         self.dest_dir = Path("test_data")
         self.dataset_id = "test-dataset"
 
     @patch("tesouro_direto_fetcher.downloader.get_dataset_resources")
-    @patch("tesouro_direto_fetcher.downloader.get_latest_file")
-    async def async_test_basic_info_retrieval(self, mock_get_latest, mock_get_resources):
-        """Test basic info retrieval without existing files."""
-        # Mock CKAN API response
-        mock_resources = [
+    def test_basic_info_retrieval(self, mock_get_resources):
+        mock_get_resources.return_value = [
             {
                 "name": "Test Resource",
                 "url": "https://example.com/test.csv",
@@ -30,27 +26,20 @@ class TestGetDownloadInfo(unittest.TestCase):
                 "last_modified": "2026-02-07T10:00:00",
             }
         ]
-        mock_get_resources.return_value = mock_resources
-        mock_get_latest.return_value = None
 
-        # Test
-        info_list = await get_download_info(self.dest_dir, self.dataset_id)
+        info_list = asyncio.run(get_download_info(self.dest_dir, self.dataset_id))
 
-        # Assertions
         self.assertEqual(len(info_list), 1)
         info = info_list[0]
         self.assertEqual(info["resource_name"], "Test Resource")
         self.assertEqual(info["url"], "https://example.com/test.csv")
-        self.assertEqual(info["size"], 1024)  # Should be converted to int
+        self.assertEqual(info["size"], 1024)
         self.assertTrue(info["would_download"])
         self.assertIsNone(info["latest_local"])
 
     @patch("tesouro_direto_fetcher.downloader.get_dataset_resources")
-    @patch("tesouro_direto_fetcher.downloader.get_latest_file")
-    async def async_test_skip_non_csv(self, mock_get_latest, mock_get_resources):
-        """Test that non-CSV resources are filtered out."""
-        # Mock CKAN API response with mixed formats
-        mock_resources = [
+    def test_skip_non_csv(self, mock_get_resources):
+        mock_get_resources.return_value = [
             {
                 "name": "CSV Resource",
                 "url": "https://example.com/data.csv",
@@ -64,22 +53,15 @@ class TestGetDownloadInfo(unittest.TestCase):
                 "size": "512",
             },
         ]
-        mock_get_resources.return_value = mock_resources
-        mock_get_latest.return_value = None
 
-        # Test
-        info_list = await get_download_info(self.dest_dir, self.dataset_id)
+        info_list = asyncio.run(get_download_info(self.dest_dir, self.dataset_id))
 
-        # Only CSV should be included
         self.assertEqual(len(info_list), 1)
         self.assertEqual(info_list[0]["resource_name"], "CSV Resource")
 
     @patch("tesouro_direto_fetcher.downloader.get_dataset_resources")
-    @patch("tesouro_direto_fetcher.downloader.get_latest_file")
-    async def async_test_existing_file_same_size(self, mock_get_latest, mock_get_resources):
-        """Test that existing files with same size are marked as not needing download."""
-        # Mock CKAN API response
-        mock_resources = [
+    def test_existing_file_same_size_skipped(self, mock_get_resources):
+        mock_get_resources.return_value = [
             {
                 "name": "Test Resource",
                 "url": "https://example.com/test.csv",
@@ -88,25 +70,24 @@ class TestGetDownloadInfo(unittest.TestCase):
                 "last_modified": "2026-02-07T10:00:00",
             }
         ]
-        mock_get_resources.return_value = mock_resources
 
-        # Mock existing file with same size
         mock_file = MagicMock(spec=Path)
         mock_file.stat.return_value.st_size = 1024
-        mock_get_latest.return_value = mock_file
+        mock_file.__str__ = MagicMock(return_value="/tmp/test.csv")
 
-        # Test
-        info_list = await get_download_info(self.dest_dir, self.dataset_id)
+        with patch(
+            "tesouro_direto_fetcher.downloader.DataRepository.get_latest_stamped_file",
+            return_value=mock_file,
+        ):
+            info_list = asyncio.run(
+                get_download_info(self.dest_dir, self.dataset_id)
+            )
 
-        # Should not download
         self.assertFalse(info_list[0]["would_download"])
 
     @patch("tesouro_direto_fetcher.downloader.get_dataset_resources")
-    @patch("tesouro_direto_fetcher.downloader.get_latest_file")
-    async def async_test_size_conversion(self, mock_get_latest, mock_get_resources):
-        """Test that size strings are converted to integers."""
-        # Mock CKAN API response with size as string
-        mock_resources = [
+    def test_size_conversion(self, mock_get_resources):
+        mock_get_resources.return_value = [
             {
                 "name": "Test Resource",
                 "url": "https://example.com/test.csv",
@@ -115,43 +96,20 @@ class TestGetDownloadInfo(unittest.TestCase):
                 "last_modified": "2026-02-07T10:00:00",
             }
         ]
-        mock_get_resources.return_value = mock_resources
-        mock_get_latest.return_value = None
 
-        # Test
-        info_list = await get_download_info(self.dest_dir, self.dataset_id)
+        info_list = asyncio.run(get_download_info(self.dest_dir, self.dataset_id))
 
-        # Size should be an integer
         self.assertIsInstance(info_list[0]["size"], int)
         self.assertEqual(info_list[0]["size"], 12345)
 
     @patch("tesouro_direto_fetcher.downloader.get_dataset_resources")
-    async def async_test_error_handling(self, mock_get_resources):
-        """Test error handling when API call fails."""
-        # Mock API error
+    def test_error_handling_raises_fetch_error(self, mock_get_resources):
         mock_get_resources.side_effect = Exception("API Error")
 
-        # Test should raise ValueError with descriptive message
-        with self.assertRaises(ValueError) as context:
-            await get_download_info(self.dest_dir, self.dataset_id)
+        with self.assertRaises(FetchError) as ctx:
+            asyncio.run(get_download_info(self.dest_dir, self.dataset_id))
 
-        self.assertIn("Error fetching resources", str(context.exception))
-
-    # Sync wrappers for async tests
-    def test_basic_info_retrieval(self):
-        asyncio.run(self.async_test_basic_info_retrieval())
-
-    def test_skip_non_csv(self):
-        asyncio.run(self.async_test_skip_non_csv())
-
-    def test_existing_file_same_size(self):
-        asyncio.run(self.async_test_existing_file_same_size())
-
-    def test_size_conversion(self):
-        asyncio.run(self.async_test_size_conversion())
-
-    def test_error_handling(self):
-        asyncio.run(self.async_test_error_handling())
+        self.assertIn("Error fetching resources", str(ctx.exception))
 
 
 if __name__ == "__main__":

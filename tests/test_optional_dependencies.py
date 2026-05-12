@@ -59,8 +59,8 @@ class TestOptionalDependencies(unittest.TestCase):
 
         # These functions should be available without extras
         self.assertTrue(hasattr(tesouro_direto_fetcher.downloader, "download"))
-        self.assertTrue(hasattr(tesouro_direto_fetcher.downloader, "download_resource"))
         self.assertTrue(hasattr(tesouro_direto_fetcher.downloader, "get_dataset_resources"))
+        self.assertTrue(hasattr(tesouro_direto_fetcher.downloader, "get_download_info"))
 
     @unittest.skipUnless(
         _has_polars(),

@@ -48,13 +48,13 @@ class TestDataRepository(unittest.TestCase):
         p.touch()
         return p
 
-    def test_get_all_latest_files(self):
+    def test_get_all_latest_stamped_files(self):
         self._touch("file-a@20240101T100000.csv")
         self._touch("file-a@20240101T110000.csv")  # Newer
         self._touch("file-b@20240101T100000.csv")
         self._touch("other.txt")  # Should be ignored
 
-        latest = self.repo.get_all_latest_files(self.DATASET_ID)
+        latest = self.repo.get_all_latest_stamped_files(self.DATASET_ID)
 
         self.assertEqual(len(latest), 2)
         names = [f.name for f in latest]
@@ -62,17 +62,20 @@ class TestDataRepository(unittest.TestCase):
         self.assertIn("file-b@20240101T100000.csv", names)
         self.assertNotIn("file-a@20240101T100000.csv", names)
 
-    def test_get_latest_file(self):
+    def test_get_latest_stamped_file(self):
         self._touch("investors-2023@20240101T100000.csv")
         self._touch("investors-2024@20240101T100000.csv")
         self._touch("investors-2024@20240101T110000.csv")  # Newer
 
-        latest = self.repo.get_latest_file(self.DATASET_ID, "investors-2024*.csv")
+        latest = self.repo.get_latest_stamped_file(self.DATASET_ID, "investors-2024")
         self.assertIsNotNone(latest)
         self.assertEqual(latest.name, "investors-2024@20240101T110000.csv")
 
-        latest = self.repo.get_latest_file(self.DATASET_ID, "nonexistent*.csv")
+        latest = self.repo.get_latest_stamped_file(self.DATASET_ID, "nonexistent")
         self.assertIsNone(latest)
+
+    def test_list_dataset_ids(self):
+        self.assertEqual(self.repo.list_dataset_ids(), [self.DATASET_ID])
 
 
 if __name__ == "__main__":
