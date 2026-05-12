@@ -7,6 +7,7 @@ from quantilica_core.exceptions import FetchError
 from quantilica_core.fetcher import RemoteResource, download_resources
 from quantilica_core.http import BROWSER_HEADERS, AsyncHttpClient
 from quantilica_core.logging import log_step
+from quantilica_core.progress import batch_progress
 
 from . import logger
 from .constants import CKAN_API_URL
@@ -112,9 +113,37 @@ async def download(
     dest_dir: Path,
     dataset_id: str,
     max_concurrency: int = 3,
+    show_progress: bool = True,
 ) -> list[dict]:
     """Download data files concurrently."""
     repo = DataRepository(dest_dir)
+
+    if show_progress:
+        try:
+            resources = await get_dataset_resources(dataset_id)
+        except Exception as e:
+            logger.error(f"Error fetching resources for {dataset_id}: {e}")
+            return []
+
+        remote = _to_remote_resources(resources, repo)
+        if not remote:
+            return []
+
+        with batch_progress(dataset_id, total=len(remote)) as pbar:
+            def _on_file_done(result: dict | None) -> None:
+                pbar.update(1)
+
+            return await download_resources(
+                remote,
+                repo,
+                dataset_id,
+                client,
+                source_id=SOURCE_ID,
+                producer="tesouro-direto-fetcher",
+                max_concurrency=max_concurrency,
+                logger=logger,
+                on_file_done=_on_file_done,
+            )
 
     with log_step(logger, "download-dataset", dataset_id=dataset_id):
         logger.info(f"Fetching metadata for {dataset_id}...")

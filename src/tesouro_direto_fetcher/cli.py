@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import logging
 from pathlib import Path
 
 from quantilica_core.logging import configure_cli_logging
@@ -36,10 +37,10 @@ def set_parser():
         version=f"%(prog)s {__version__}",
     )
     parser.add_argument(
-        "-v",
         "--verbose",
         action="store_true",
-        help="Enable DEBUG-level logging",
+        default=False,
+        help="Exibir logs detalhados em vez de barra de progresso",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -103,9 +104,11 @@ def _resolve_dataset_ids(name: str) -> list[str]:
     return [DATASET_MAP[name]]
 
 
-async def run_download(args):
+async def run_download(args, show_progress: bool = True):
     for dataset_id in _resolve_dataset_ids(args.dataset):
-        await downloader.download(args.output, dataset_id=dataset_id)
+        await downloader.download(
+            args.output, dataset_id=dataset_id, show_progress=show_progress
+        )
 
 
 def _print_info_list(info_list: list[dict]) -> tuple[int, int]:
@@ -224,9 +227,12 @@ def main():
     args = parser.parse_args()
     configure_cli_logging(verbose=args.verbose)
 
+    if not args.verbose:
+        logging.getLogger("tesouro_direto_fetcher").setLevel(logging.WARNING)
+
     if args.command == "download":
         try:
-            asyncio.run(run_download(args))
+            asyncio.run(run_download(args, show_progress=not args.verbose))
         except KeyboardInterrupt:
             logger.warning("Download cancelled.")
 
