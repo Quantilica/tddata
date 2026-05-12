@@ -45,9 +45,9 @@ def set_parser():
         "-o",
         "--output",
         dest="output",
-        default=Path("data"),
+        default=Path("/data/tesouro-direto"),
         type=Path,
-        help="Output directory",
+        help="Output directory (default: /data/tesouro-direto)",
     )
     download_parser.add_argument(
         "--dataset",
@@ -63,9 +63,9 @@ def set_parser():
         "-o",
         "--output",
         dest="output",
-        default=Path("data"),
+        default=Path("/data/tesouro-direto"),
         type=Path,
-        help="Output directory (to check for existing files)",
+        help="Output directory to check for existing files (default: /data/tesouro-direto)",
     )
     info_parser.add_argument(
         "--dataset",
@@ -84,7 +84,7 @@ def set_parser():
         convert_parser.add_argument(
             "data_dir",
             type=Path,
-            help="Data directory (root of raw/<dataset_id>/ tree)",
+            help="Data directory (root of <dataset_id>/ tree)",
         )
     except ImportError:
         pass
@@ -189,7 +189,7 @@ def run_convert(args) -> int:
     repo = DataRepository(data_dir)
     datasets = repo.list_datasets()
     if not datasets:
-        logger.warning(f"No raw datasets found under '{data_dir}/raw/'.")
+        logger.warning(f"No datasets found under '{data_dir}'.")
         return 0
 
     converted = 0
