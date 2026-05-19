@@ -1,6 +1,6 @@
 [project]
 name = "tesouro-direto-fetcher"
-version = "2.1.1"
+version = "3.0.0"
 description = "Easly download & read brazilian Tesouro Direto's data"
 readme = "README.md"
 authors = [
