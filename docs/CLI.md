@@ -2,11 +2,15 @@
 
 ## Overview
 
-The `tesouro-direto-fetcher` command-line interface (CLI) provides a convenient way to download, inspect, and convert Brazilian Tesouro Direto data from the official CKAN API. The CLI supports three main operations: downloading datasets, getting download information without downloading, and converting CSV files to Parquet format.
+The `tesouro-direto-fetcher` command-line interface (CLI) provides a
+convenient way to download, inspect, and convert Brazilian Tesouro Direto data
+from the official CKAN API. The CLI exposes three commands: `sync` (download),
+`convert` (CSV → Parquet) and `pipeline` (sync → convert chained).
 
 ## Installation
 
-The CLI is included with the `tesouro-direto-fetcher` package. Install it using one of the following methods:
+The CLI is included with the `tesouro-direto-fetcher` package. Install it using
+one of the following methods:
 
 **Minimal installation (download only):**
 ```bash
@@ -18,7 +22,7 @@ pip install "git+https://github.com/Quantilica/tesouro-direto-fetcher#egg=tesour
 pip install "git+https://github.com/Quantilica/tesouro-direto-fetcher#egg=tesouro-direto-fetcher[analysis]"
 ```
 
-The `analysis` extras are required for the `convert` command.
+The `analysis` extras are required for the `convert` and `pipeline` commands.
 
 ## General Usage
 
@@ -28,24 +32,26 @@ tesouro-direto-fetcher <command> [options]
 
 ### Available Commands
 
-- `download` - Download datasets from the Tesouro Transparente CKAN API
-- `info` - Show information about datasets without downloading
-- `convert` - Convert CSV files to Parquet format (requires analysis extras)
+- `sync` - Sync datasets from the Tesouro Transparente CKAN API
+- `convert` - Convert downloaded CSVs to Parquet (requires analysis extras)
+- `pipeline` - Run the full pipeline: sync → convert
 
 ### Global Options
 
 - `-h, --help` - Show help message and exit
+- `--version` - Show the package version and exit
 - `--verbose` - Exibir logs detalhados em vez de barra de progresso
 
 ## Commands
 
-### `download`
+### `sync`
 
-Download one or more datasets to a local directory.
+Sync one or more datasets to a local directory. The download is idempotent —
+files already up-to-date (per CKAN `Last-Modified`) are skipped.
 
 **Syntax:**
 ```bash
-tesouro-direto-fetcher download [-o OUTPUT_DIR] [--dataset DATASET] [--verbose]
+tesouro-direto-fetcher sync [-o OUTPUT_DIR] [--dataset DATASET] [--dry-run]
 ```
 
 **Options:**
@@ -54,162 +60,83 @@ tesouro-direto-fetcher download [-o OUTPUT_DIR] [--dataset DATASET] [--verbose]
   - Output directory for downloaded files
   - Type: Path
   - Default: `/data/tesouro-direto`
-  - Example: `-o ./my_data`
 
 - `--dataset DATASET`
-  - Dataset to download
-  - Choices: `prices`, `operations`, `investors`, `stock`, `buybacks`, `sales`, `all`
-  - Default: `prices`
-  - When `all` is specified, downloads all available datasets sequentially
+  - Dataset to sync
+  - Choices: `prices`, `operations`, `investors`, `stock`, `buybacks`,
+    `sales`, `all`
+  - Default: `all` (syncs every dataset sequentially)
 
-- `--verbose`
-  - Exibe logs detalhados em vez da barra de progresso
-  - Por padrão, o comando mostra uma barra de contagem de arquivos (`N/total arquivo`)
+- `--dry-run`
+  - List the files that would be downloaded (resources, sizes, modification
+    dates, and whether each file is up-to-date) without writing anything.
 
 **Examples:**
 
 ```bash
-# Download prices dataset (barra de progresso por padrão)
-tesouro-direto-fetcher download
+# Sync every dataset (default)
+tesouro-direto-fetcher sync -o ./data
 
-# Download para diretório customizado
-tesouro-direto-fetcher download -o ./tesouro_data
+# Sync a single dataset
+tesouro-direto-fetcher sync --dataset prices -o ./data
 
-# Download com logs detalhados em vez de barra
-tesouro-direto-fetcher download --verbose
+# Preview what would be downloaded, without downloading
+tesouro-direto-fetcher sync --dataset prices --dry-run -o ./data
 
-# Download de outro dataset
-tesouro-direto-fetcher download --dataset stock -o ./data
-
-# Download de todos os datasets
-tesouro-direto-fetcher download --dataset all -o ./data
+# Verbose logs instead of the progress bar
+tesouro-direto-fetcher sync --verbose -o ./data
 ```
 
-**Output (padrão):**
-Uma barra de contagem de arquivos por dataset:
-```
-prices | 1/1 arquivo [00:03, 0.3 arquivo/s]
-```
-
-**Output (--verbose):**
-Logs estruturados com timestamps, nível e etapas de download:
-```
-2025-01-10T14:22:01+0000 INFO tesouro_direto_fetcher.downloader download-dataset start dataset_id=tesouro-direto-venda
-2025-01-10T14:22:01+0000 INFO tesouro_direto_fetcher.downloader Fetching metadata for tesouro-direto-venda...
-2025-01-10T14:22:02+0000 INFO tesouro_direto_fetcher.downloader Found 1 files. Starting download...
-2025-01-10T14:22:05+0000 INFO tesouro_direto_fetcher.downloader download-dataset ok elapsed=4.1s
-```
-
-Files are saved with timestamps in their filenames (e.g., `taxas-dos-titulos-ofertados-pelo-tesouro-direto@20251230T102010.csv`).
-
-### `info`
-
-Display information about datasets that would be downloaded, including file sizes, modification dates, and whether files are already up-to-date locally.
-
-**Syntax:**
-```bash
-tesouro-direto-fetcher info [-o OUTPUT_DIR] [--dataset DATASET]
-```
-
-**Options:**
-
-- `-o OUTPUT_DIR, --output OUTPUT_DIR`
-  - Output directory to check for existing files
-  - Type: Path
-  - Default: `data`
-  - Example: `-o ./my_data`
-
-- `--dataset DATASET`
-  - Dataset to get information about
-  - Choices: `prices`, `operations`, `investors`, `stock`, `buybacks`, `sales`, `all`
-  - Default: `prices`
-  - When `all` is specified, shows information for all datasets
-
-**Examples:**
-
-```bash
-# Get info about prices dataset
-tesouro-direto-fetcher info --dataset prices
-
-# Get info about all datasets
-tesouro-direto-fetcher info --dataset all -o ./data
-
-# Check stock data with custom output directory
-tesouro-direto-fetcher info --dataset stock -o ./tesouro_data
-```
-
-**Sample Output:**
-```
-Fetching download info for prices...
-
-Found 1 CSV resources:
-================================================================================
-
-Resource: Taxas dos Títulos Ofertados pelo Tesouro Direto
-  Filename: taxas-dos-titulos-ofertados-pelo-tesouro-direto@20251230T102010.csv
-  Destination: data\taxas-dos-titulos-ofertados-pelo-tesouro-direto@20251230T102010.csv
-  Size: 13,788,359 bytes
-  Last Modified: 2025-12-30T10:22:12.278476
-  Would Download: Yes
-
-================================================================================
-Total resources: 1
-Would download: 1
-Total size: 13,788,359 bytes (13.15 MB)
-```
-
-**Output Fields:**
-
-- `Resource`: Name of the dataset resource from CKAN
-- `Filename`: Generated filename with timestamp
-- `Destination`: Full local path where the file would be saved
-- `Size`: File size in bytes (or "Unknown" if not available)
-- `Last Modified`: Last modification timestamp from CKAN
-- `Would Download`: Whether the file would be downloaded (Yes/No)
-- `Latest Local`: Path to the most recent local version (if exists)
+Files are saved with timestamps in their filenames (e.g.,
+`taxas-dos-titulos-ofertados-pelo-tesouro-direto@20251230T102010.csv`).
 
 ### `convert`
 
-Convert CSV files downloaded by tesouro-direto-fetcher to Parquet format for better performance and storage efficiency. This command is only available when the `analysis` optional dependencies are installed.
+Convert the most recent CSV files under a data directory tree to Parquet for
+better performance and storage efficiency. This command is only available when
+the `analysis` optional dependencies are installed.
 
 **Syntax:**
 ```bash
-tesouro-direto-fetcher convert <file> [--type DATASET_TYPE]
+tesouro-direto-fetcher convert <data_dir>
 ```
 
 **Arguments:**
 
-- `file`
-  - Path to the CSV file to convert
+- `data_dir`
+  - Data directory (root of the `<dataset_id>/` tree produced by `sync`)
   - Type: Path
   - Required
-  - Example: `data/taxas-dos-titulos-ofertados-pelo-tesouro-direto@20251230T102010.csv`
-
-**Options:**
-
-- `--type DATASET_TYPE`
-  - Dataset type for proper column parsing
-  - Choices: `prices`, `operations`, `investors`, `stock`, `buybacks`, `sales`, `maturities`, `infer`
-  - Default: `infer`
-  - When `infer` is used, the type is automatically detected from the filename
 
 **Examples:**
 
 ```bash
-# Convert a prices CSV file with automatic type detection
-tesouro-direto-fetcher convert data/taxas-dos-titulos-ofertados-pelo-tesouro-direto@20251230T102010.csv
-
-# Convert with explicit type specification
-tesouro-direto-fetcher convert data/operacoes-do-tesouro-direto@20251201T102018.csv --type operations
-
-# Convert investors data
-tesouro-direto-fetcher convert data/investidores-do-tesouro-direto@20251205T131939.csv --type investors
+# Convert the latest CSVs under ./data
+tesouro-direto-fetcher convert ./data
 ```
 
-**Output:**
-The command creates a Parquet file with the same base name as the input CSV but with a `.parquet` extension. For example:
+Each converted file is written with the same base name and a `.parquet`
+extension.
+
+### `pipeline`
+
+Run the full pipeline in one command: `sync` followed by `convert`.
+
+**Syntax:**
+```bash
+tesouro-direto-fetcher pipeline [-o OUTPUT_DIR] [--dataset DATASET]
 ```
-Successfully converted to data/taxas-dos-titulos-ofertados-pelo-tesouro-direto@20251230T102010.parquet
+
+**Options:**
+
+- `-o OUTPUT_DIR, --output OUTPUT_DIR` — output directory (default:
+  `/data/tesouro-direto`)
+- `--dataset DATASET` — dataset to sync (default: `all`)
+
+**Example:**
+
+```bash
+tesouro-direto-fetcher pipeline -o ./data
 ```
 
 ## Dataset Types
@@ -222,43 +149,8 @@ The following dataset types are supported:
 - `stock` - Current stock/holdings of Tesouro Direto bonds
 - `buybacks` - Bond redemption/buyback operations
 - `sales` - Bond sales data
-- `maturities` - Bond maturity information (convert command only)
 
 ## Error Handling
-
-### Common Errors
-
-**Command not found:**
-```
-tesouro-direto-fetcher: command not found
-```
-**Solution:** Ensure `tesouro-direto-fetcher` is installed and available in your PATH, or use `uv run tesouro-direto-fetcher` if using uv.
-
-**Convert command not available:**
-```
-Error: Convert feature requires analysis extras.
-Install with: pip install tesouro-direto-fetcher[analysis]
-```
-**Solution:** Install with analysis extras: `pip install "git+https://github.com/Quantilica/tesouro-direto-fetcher#egg=tesouro-direto-fetcher[analysis]"`
-
-**Invalid dataset:**
-```
-usage: tesouro-direto-fetcher download [-o OUTPUT_DIR] [--dataset {prices,operations,investors,stock,buybacks,sales,all}]
-tesouro-direto-fetcher download: error: argument --dataset: invalid choice: 'invalid_dataset'
-```
-**Solution:** Use one of the valid dataset choices listed in the error message.
-
-**File not found (convert command):**
-```
-Error converting file: [Errno 2] No such file or directory: 'nonexistent.csv'
-```
-**Solution:** Ensure the CSV file path is correct and the file exists.
-
-**Network errors (download/info commands):**
-```
-Error fetching download info: Connection timeout
-```
-**Solution:** Check your internet connection and try again. The Tesouro Transparente API may be temporarily unavailable.
 
 ### Exit Codes
 
@@ -266,65 +158,21 @@ Error fetching download info: Connection timeout
 - `1` - Error (invalid arguments, file not found, network issues, etc.)
 - `130` - Interrupted (Ctrl+C)
 
-## Advanced Usage
+### Common Errors
 
-### Batch Processing
-
-To download multiple specific datasets, run separate commands:
-
-```bash
-# Download prices and operations
-tesouro-direto-fetcher download --dataset prices -o ./data
-tesouro-direto-fetcher download --dataset operations -o ./data
-
-# Or use all for everything
-tesouro-direto-fetcher download --dataset all -o ./data
+**Convert command not available:**
 ```
-
-### Checking Before Downloading
-
-Always use the `info` command first to see what will be downloaded:
-
-```bash
-# Check what's available
-tesouro-direto-fetcher info --dataset prices
-
-# Then download if satisfied
-tesouro-direto-fetcher download --dataset prices
+Erro: convert requer extras de análise: pip install tesouro-direto-fetcher[analysis]
 ```
+**Solution:** Install with analysis extras: `pip install "git+https://github.com/Quantilica/tesouro-direto-fetcher#egg=tesouro-direto-fetcher[analysis]"`
 
-### Converting Multiple Files
-
-Use shell globbing or loops to convert multiple files:
-
-```bash
-# Convert all CSV files in data directory
-for file in data/*.csv; do
-    tesouro-direto-fetcher convert "$file"
-done
+**Invalid dataset:**
 ```
-
-### Integration with Scripts
-
-The CLI can be easily integrated into shell scripts or automation tools:
-
-```bash
-#!/bin/bash
-# Download latest data and convert to Parquet
-
-DATA_DIR="./tesouro_data"
-mkdir -p "$DATA_DIR"
-
-# Download all datasets
-tesouro-direto-fetcher download --dataset all -o "$DATA_DIR"
-
-# Convert all CSV files to Parquet
-find "$DATA_DIR" -name "*.csv" -exec tesouro-direto-fetcher convert {} \;
+Erro: dataset inválido 'invalid'. Opções: prices, operations, investors, stock, buybacks, sales, all
 ```
+**Solution:** Use one of the valid dataset choices listed in the error message.
 
 ## See Also
 
 - [README.md](../README.md) - General package documentation
-- [download_info.md](download_info.md) - Detailed download info feature documentation
-- [examples/download_info_example.py](../examples/download_info_example.py) - Programmatic usage examples
 - [Tesouro Transparente CKAN API](https://www.tesourotransparente.gov.br/ckan/) - Official data source

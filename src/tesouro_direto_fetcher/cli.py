@@ -1,3 +1,5 @@
+"""Command-line interface for tesouro-direto-fetcher."""
+
 import argparse
 import asyncio
 import logging
@@ -16,6 +18,8 @@ from .constants import (
 )
 from .storage import DataRepository
 
+_DEFAULT_OUTPUT = Path("/data/tesouro-direto")
+
 DATASET_MAP = {
     "prices": DATASET_PRICES_RATES,
     "operations": DATASET_OPERATIONS,
@@ -27,84 +31,13 @@ DATASET_MAP = {
 DATASET_CHOICES = [*DATASET_MAP, "all"]
 
 
-def set_parser():
-    parser = argparse.ArgumentParser(
-        description="Tesouro Direto Data Downloader & Converter"
-    )
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=f"%(prog)s {__version__}",
-    )
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        default=False,
-        help="Exibir logs detalhados em vez de barra de progresso",
-    )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    download_parser = subparsers.add_parser(
-        "download", help="Download datasets"
-    )
-    download_parser.add_argument(
-        "-o",
-        "--output",
-        dest="output",
-        default=Path("/data/tesouro-direto"),
-        type=Path,
-        help="Output directory (default: /data/tesouro-direto)",
-    )
-    download_parser.add_argument(
-        "--dataset",
-        choices=DATASET_CHOICES,
-        default="prices",
-        help="Dataset to download",
-    )
-
-    info_parser = subparsers.add_parser(
-        "info", help="Show download info without downloading"
-    )
-    info_parser.add_argument(
-        "-o",
-        "--output",
-        dest="output",
-        default=Path("/data/tesouro-direto"),
-        type=Path,
-        help="Output directory to check for existing files (default: /data/tesouro-direto)",
-    )
-    info_parser.add_argument(
-        "--dataset",
-        choices=DATASET_CHOICES,
-        default="prices",
-        help="Dataset to get info about",
-    )
-
-    # Convert command (only available with analysis extras)
-    try:
-        from . import converter  # noqa: F401
-
-        convert_parser = subparsers.add_parser(
-            "convert", help="Convert all latest CSVs to Parquet"
-        )
-        convert_parser.add_argument(
-            "data_dir",
-            type=Path,
-            help="Data directory (root of <dataset_id>/ tree)",
-        )
-    except ImportError:
-        pass
-
-    return parser
-
-
 def _resolve_dataset_ids(name: str) -> list[str]:
     if name == "all":
         return list(DATASET_MAP.values())
     return [DATASET_MAP[name]]
 
 
-async def run_download(args, show_progress: bool = True):
+async def _run_download(args, show_progress: bool = True):
     for dataset_id in _resolve_dataset_ids(args.dataset):
         await downloader.download(
             args.output, dataset_id=dataset_id, show_progress=show_progress
@@ -146,7 +79,7 @@ def _print_info_list(info_list: list[dict]) -> tuple[int, int]:
     return total_size, would_download_count
 
 
-async def run_info(args):
+async def _run_dry_run(args):
     logger.info(f"Fetching download info for {args.dataset}...")
 
     if args.dataset == "all":
@@ -181,12 +114,30 @@ async def run_info(args):
     _print_info_list(info_list)
 
 
-def run_convert(args) -> int:
+def cmd_sync(args) -> None:
+    if args.dry_run:
+        try:
+            asyncio.run(_run_dry_run(args))
+        except KeyboardInterrupt:
+            logger.warning("Cancelado.")
+        except Exception as exc:
+            logger.error(f"Error fetching download info: {exc}")
+        return
+
+    try:
+        asyncio.run(_run_download(args, show_progress=not args.verbose))
+    except KeyboardInterrupt:
+        logger.warning("Download cancelled.")
+
+
+def cmd_convert(args) -> int:
     try:
         from . import converter
     except ImportError:
         logger.error("Convert feature requires analysis extras.")
-        logger.error("Install with: pip install tesouro-direto-fetcher[analysis]")
+        logger.error(
+            "Install with: pip install tesouro-direto-fetcher[analysis]"
+        )
         return 1
 
     data_dir: Path = args.data_dir
@@ -222,6 +173,101 @@ def run_convert(args) -> int:
     return 0 if failed == 0 else 1
 
 
+def cmd_pipeline(args) -> int:
+    logger.info("=== Passo 1/2: sincronização ===")
+    try:
+        asyncio.run(_run_download(args, show_progress=not args.verbose))
+    except KeyboardInterrupt:
+        logger.warning("Download cancelled.")
+        return 1
+    logger.info("=== Passo 2/2: conversão ===")
+    args.data_dir = args.output
+    return cmd_convert(args)
+
+
+def set_parser():
+    parser = argparse.ArgumentParser(
+        prog="tesouro-direto-fetcher",
+        description="Tesouro Direto Data Downloader & Converter",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="Exibir logs detalhados em vez de barra de progresso",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # sync
+    sync_parser = subparsers.add_parser(
+        "sync", help="Sincronizar datasets do Tesouro Direto"
+    )
+    sync_parser.add_argument(
+        "-o",
+        "--output",
+        dest="output",
+        default=_DEFAULT_OUTPUT,
+        type=Path,
+        help="Output directory (default: /data/tesouro-direto)",
+    )
+    sync_parser.add_argument(
+        "--dataset",
+        choices=DATASET_CHOICES,
+        default="all",
+        help="Dataset to download (default: all)",
+    )
+    sync_parser.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        default=False,
+        help="List files that would be downloaded without downloading them",
+    )
+    sync_parser.set_defaults(func=cmd_sync)
+
+    # convert (only available with analysis extras)
+    try:
+        from . import converter  # noqa: F401
+
+        convert_parser = subparsers.add_parser(
+            "convert", help="Convert all latest CSVs to Parquet"
+        )
+        convert_parser.add_argument(
+            "data_dir",
+            type=Path,
+            help="Data directory (root of <dataset_id>/ tree)",
+        )
+        convert_parser.set_defaults(func=cmd_convert)
+
+        pipeline_parser = subparsers.add_parser(
+            "pipeline", help="Pipeline completo (sync -> convert)"
+        )
+        pipeline_parser.add_argument(
+            "-o",
+            "--output",
+            dest="output",
+            default=_DEFAULT_OUTPUT,
+            type=Path,
+            help="Output directory (default: /data/tesouro-direto)",
+        )
+        pipeline_parser.add_argument(
+            "--dataset",
+            choices=DATASET_CHOICES,
+            default="all",
+            help="Dataset to download (default: all)",
+        )
+        pipeline_parser.set_defaults(func=cmd_pipeline)
+    except ImportError:
+        pass
+
+    return parser
+
+
 def main():
     parser = set_parser()
     args = parser.parse_args()
@@ -230,19 +276,8 @@ def main():
     if not args.verbose:
         logging.getLogger("tesouro_direto_fetcher").setLevel(logging.WARNING)
 
-    if args.command == "download":
-        try:
-            asyncio.run(run_download(args, show_progress=not args.verbose))
-        except KeyboardInterrupt:
-            logger.warning("Download cancelled.")
+    return args.func(args)
 
-    elif args.command == "info":
-        try:
-            asyncio.run(run_info(args))
-        except KeyboardInterrupt:
-            logger.warning("Info cancelled.")
-        except Exception as exc:
-            logger.error(f"Error fetching download info: {exc}")
 
-    elif args.command == "convert":
-        return run_convert(args)
+if __name__ == "__main__":
+    main()
